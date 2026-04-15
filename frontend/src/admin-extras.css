@@ -1,0 +1,101 @@
+/* Inventory Management Styles */
+.admin-row-warning {
+  background-color: #fef3c7;
+}
+
+.admin-input-small {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(0,0,0,0.2);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  width: 4rem;
+}
+
+/* Order Tracking Styles */
+.admin-order-editing {
+  border-color: #93c5fd;
+  background-color: #eff6ff;
+}
+
+.admin-order-status {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(0,0,0,0.7);
+}
+
+.admin-order-edit {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Analytics Styles */
+.admin-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-analytics-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-analytics-card {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0,0,0,0.1);
+  padding: 1rem;
+  background-color: rgba(255,255,255,0.5);
+}
+
+.admin-analytics-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: rgba(0,0,0,0.5);
+}
+
+.admin-analytics-value {
+  margin-top: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: black;
+}
+
+.admin-daily-revenue {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.admin-daily-item {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0,0,0,0.1);
+  padding: 0.75rem;
+  background-color: rgba(255,255,255,0.5);
+  text-align: center;
+}
+
+.admin-daily-date {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(0,0,0,0.6);
+  font-family: monospace;
+}
+
+.admin-daily-value {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: black;
+  margin-top: 0.25rem;
+}
