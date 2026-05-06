@@ -313,9 +313,17 @@ function CartDrawer({
                       onChange={() => onPaymentChange((prev) => ({ ...prev, method: 'bank-transfer' }))} />
                     <span>Chuyển khoản ngân hàng</span>
                   </label>
+                  <label className={`cart-payment-option ${paymentInfo.method === 'vnpay' ? 'cart-payment-option-active' : ''}`}>
+                    <input type="radio" name="paymentMethod" value="vnpay" checked={paymentInfo.method === 'vnpay'}
+                      onChange={() => onPaymentChange((prev) => ({ ...prev, method: 'vnpay' }))} />
+                    <span>🏦 Thanh toán VNPAY (ATM/Visa/QR)</span>
+                  </label>
                 </div>
                 {paymentInfo.method === 'bank-transfer' ? (
                   <p className="cart-payment-note">Sau khi bấm Thanh toán, mã QR sẽ hiển thị để bạn chuyển khoản.</p>
+                ) : null}
+                {paymentInfo.method === 'vnpay' ? (
+                  <p className="cart-payment-note">Bạn sẽ được chuyển đến cổng thanh toán VNPAY để hoàn tất giao dịch (Sandbox mode).</p>
                 ) : null}
               </div>
 

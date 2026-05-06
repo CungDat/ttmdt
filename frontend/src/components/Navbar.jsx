@@ -149,10 +149,30 @@ function Navbar({
                     className="user-menu-action"
                     onClick={() => {
                       setIsUserMenuOpen(false);
+                      navigate('/profile');
+                    }}
+                  >
+                    Thông tin cá nhân
+                  </button>
+                  <button
+                    type="button"
+                    className="user-menu-action"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
                       onViewOrders();
                     }}
                   >
                     My Orders
+                  </button>
+                  <button
+                    type="button"
+                    className="user-menu-action"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      navigate('/search');
+                    }}
+                  >
+                    Tìm kiếm nâng cao
                   </button>
                   {currentUser.role === 'admin' ? (
                     <button

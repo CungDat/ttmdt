@@ -10,6 +10,9 @@ import HomePage from './pages/HomePage';
 import LineSeriesPage from './pages/LineSeriesPage';
 import LineDetailPage from './pages/LineDetailPage';
 import AdminPage from './pages/AdminPage';
+import SearchPage from './pages/SearchPage';
+import ProfilePage from './pages/ProfilePage';
+import VNPayReturnPage from './pages/VNPayReturnPage';
 import { useCatalogData } from './hooks/useCatalogData';
 import { useProductSearch } from './hooks/useProductSearch';
 import { useLineCatalog } from './hooks/useLineCatalog';
@@ -450,6 +453,45 @@ function App() {
       return;
     }
 
+    // VNPAY Payment Flow
+    if (paymentFields.method === 'vnpay') {
+      setIsCheckoutSubmitting(true);
+      setCartError('');
+      try {
+        const response = await axios.post(
+          'http://localhost:5000/api/payment/vnpay/create',
+          {
+            items: cartItems.map(item => ({
+              ...item,
+              configuration: item.configuration || undefined
+            })),
+            currencySymbol: '$',
+            shippingAddress: shippingFields,
+            voucherCode: checkoutData.voucherCode || ''
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`
+            }
+          }
+        );
+
+        if (response.data?.paymentUrl) {
+          // Redirect to VNPAY payment page
+          setCartItems([]);
+          setIsCartOpen(false);
+          window.location.href = response.data.paymentUrl;
+        } else {
+          setCartError('Không thể tạo liên kết thanh toán VNPAY.');
+        }
+      } catch (error) {
+        setCartError(error?.response?.data?.message || 'Thanh toán VNPAY thất bại. Vui lòng thử lại.');
+      } finally {
+        setIsCheckoutSubmitting(false);
+      }
+      return;
+    }
+
     const createOrder = async (method, checkoutData = {}) => {
       const response = await axios.post(
         'http://localhost:5000/api/orders',
@@ -664,6 +706,62 @@ function App() {
 
   const pathname = location.pathname.toLowerCase();
   const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin/');
+  const isSearchRoute = pathname === '/search';
+  const isProfileRoute = pathname === '/profile';
+  const isVNPayReturnRoute = pathname === '/payment/vnpay-return';
+
+  // VNPAY Return Page
+  if (isVNPayReturnRoute) {
+    return (
+      <div className="page-container">
+        {navbarNode}
+        {authSuccessToastNode}
+        <VNPayReturnPage />
+        {authModalNode}
+      </div>
+    );
+  }
+
+  // Search Page
+  if (isSearchRoute) {
+    return (
+      <div className="page-container">
+        {navbarNode}
+        {authSuccessToastNode}
+        <SearchPage
+          onAddToCart={handleAddToCart}
+          isAuthenticated={Boolean(currentUser)}
+          onOpenLineDetailPage={openLineDetailPage}
+        />
+        {cartDrawerNode}
+        {bankTransferModalNode}
+        {ordersDrawerNode}
+        {authModalNode}
+      </div>
+    );
+  }
+
+  // Profile Page
+  if (isProfileRoute) {
+    return (
+      <div className="page-container">
+        {navbarNode}
+        {authSuccessToastNode}
+        <ProfilePage
+          currentUser={currentUser}
+          authToken={authToken}
+          onUserUpdate={(updatedUser) => {
+            setCurrentUser(updatedUser);
+            localStorage.setItem('lab_billiard_user', JSON.stringify(updatedUser));
+          }}
+          onBack={() => navigate('/')}
+        />
+        {cartDrawerNode}
+        {ordersDrawerNode}
+        {authModalNode}
+      </div>
+    );
+  }
 
   if (isAdminRoute) {
     return (

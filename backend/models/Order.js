@@ -55,7 +55,7 @@ const orderSchema = new mongoose.Schema(
       postalCode: { type: String, required: true, trim: true }
     },
     payment: {
-      method: { type: String, required: true, enum: ['cod', 'bank-transfer', 'bank-account'], default: 'cod' },
+      method: { type: String, required: true, enum: ['cod', 'bank-transfer', 'bank-account', 'vnpay'], default: 'cod' },
       bankName: { type: String, trim: true, default: '' },
       accountNumber: { type: String, trim: true, default: '' },
       accountHolder: { type: String, trim: true, default: '' },

@@ -36,6 +36,9 @@ const { ProductVariant, VariantOptions } = require('./models/ProductVariant');
 const Inventory = require('./models/Inventory');
 const OrderHistory = require('./models/OrderHistory');
 const createAdminVariantInventoryRouter = require('./routes/adminVariantInventoryRoutes');
+const createPaymentRouter = require('./routes/paymentRoutes');
+const createSearchRouter = require('./routes/searchRoutes');
+const createUploadRouter = require('./routes/uploadRoutes');
 
 const ADMIN_LINE_MODELS = {
     truesplice: { model: TrueSpliceLine, label: 'True Splice' },
@@ -269,6 +272,8 @@ const sanitizeUser = (user) => ({
     id: user._id,
     name: user.name,
     email: user.email,
+    phone: user.phone || '',
+    address: user.address || '',
     role: user.role
 });
 
@@ -372,6 +377,47 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
     return res.json({ user: sanitizeUser(req.authUser) });
+});
+
+// ─── USER PROFILE UPDATE ───
+app.put('/api/auth/profile', requireAuth, async (req, res) => {
+    try {
+        const updates = {};
+        if (typeof req.body?.name !== 'undefined') {
+            const name = String(req.body.name || '').trim();
+            if (/\d/.test(name)) {
+                return res.status(400).json({ message: 'Name cannot contain numbers' });
+            }
+            updates.name = name;
+        }
+        if (typeof req.body?.phone !== 'undefined') {
+            updates.phone = String(req.body.phone || '').trim();
+        }
+        if (typeof req.body?.address !== 'undefined') {
+            updates.address = String(req.body.address || '').trim();
+        }
+
+        // Password change
+        if (req.body?.currentPassword && req.body?.newPassword) {
+            const passwordMatched = await bcrypt.compare(req.body.currentPassword, req.authUser.passwordHash);
+            if (!passwordMatched) {
+                return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
+            }
+            if (req.body.newPassword.length < 6) {
+                return res.status(400).json({ message: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+            }
+            updates.passwordHash = await bcrypt.hash(req.body.newPassword, 12);
+        }
+
+        const user = await User.findByIdAndUpdate(req.authUser._id, updates, { new: true, runValidators: true });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        return res.json({ user: sanitizeUser(user) });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
 });
 
 app.get('/api/admin/products', requireAuth, requireAdmin, async (req, res) => {
@@ -709,9 +755,9 @@ app.post('/api/orders', requireAuth, async (req, res) => {
             payment.method = 'bank-transfer';
         }
 
-        const allowedMethods = ['cod', 'bank-transfer'];
+        const allowedMethods = ['cod', 'bank-transfer', 'vnpay'];
         if (!allowedMethods.includes(payment.method)) {
-            return res.status(400).json({ message: 'Payment method must be cod or bank-transfer' });
+            return res.status(400).json({ message: 'Payment method must be cod, bank-transfer, or vnpay' });
         }
 
         if (payment.method === 'bank-transfer') {
@@ -1127,6 +1173,34 @@ app.use('/api/admin', createAdminVariantInventoryRouter({
     findLineItemById,
     syncInventoryFromVariants,
     buildDefaultVariantSku
+}));
+
+// ─── PAYMENT GATEWAY (VNPAY) ───
+app.use('/api/payment', createPaymentRouter({
+    requireAuth,
+    Order,
+    Inventory,
+    ADMIN_LINE_MODELS,
+    buildLineItemLookup,
+    resolveOrderItemProduct,
+    syncInventoryFromVariants,
+    calculateShippingFee,
+    applyVoucher,
+    VOUCHER_CODES,
+    SELLER_BANK_INFO
+}));
+
+// ─── ADVANCED SEARCH & FILTER ───
+app.use('/api/search', createSearchRouter({
+    ADMIN_LINE_MODELS,
+    Inventory,
+    ProductVariant
+}));
+
+// ─── CLOUDINARY UPLOAD ───
+app.use('/api/upload', createUploadRouter({
+    requireAuth,
+    requireAdmin
 }));
 
 // ====================== PHASE 2: ORDER FULFILLMENT & TRACKING ======================
