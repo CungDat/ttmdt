@@ -11,6 +11,12 @@ const variantOptionsSchema = new mongoose.Schema({
 const productVariantSchema = new mongoose.Schema(
   {
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    lineType: {
+      type: String,
+      required: true,
+      enum: ['truesplice', 'p3', 'poison-maelith', 'poison-candy', 'break-jump', 'limited']
+    },
+    lineName: { type: String, required: true, trim: true },
     sku: { type: String, required: true, unique: true, trim: true },
     shaft: { type: String, required: true, trim: true },
     joint: { type: String, required: true, trim: true },
@@ -26,7 +32,6 @@ const productVariantSchema = new mongoose.Schema(
 
 // Index để tìm kiếm nhanh combinations
 productVariantSchema.index({ productId: 1, status: 1 });
-productVariantSchema.index({ sku: 1 });
 
 module.exports = {
   ProductVariant: mongoose.model('ProductVariant', productVariantSchema),

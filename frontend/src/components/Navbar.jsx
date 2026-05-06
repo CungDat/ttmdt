@@ -14,6 +14,8 @@ function Navbar({
   getCategoriesByType,
   getMenuSeriesKey,
   openLineSeriesPage,
+  openLineDetailPage,
+  resolveMenuLineItem,
   searchPanelRef,
   closeSearchPanel,
   searchInputRef,
@@ -187,6 +189,8 @@ function Navbar({
           getCategoriesByType={getCategoriesByType}
           getMenuSeriesKey={getMenuSeriesKey}
           openLineSeriesPage={openLineSeriesPage}
+          openLineDetailPage={openLineDetailPage}
+          resolveMenuLineItem={resolveMenuLineItem}
         />
 
         <SearchPanel

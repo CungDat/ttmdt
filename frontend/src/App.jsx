@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from './components/Navbar';
@@ -14,17 +14,26 @@ import { useCatalogData } from './hooks/useCatalogData';
 import { useProductSearch } from './hooks/useProductSearch';
 import { useLineCatalog } from './hooks/useLineCatalog';
 import { useNavbarState } from './hooks/useNavbarState';
-import { getMenuSeriesKey } from './utils/lineUtils';
+import { getMenuSeriesKey, normalizeSearchText } from './utils/lineUtils';
 import './App.css';
+
+const safeParseJson = (value, fallback) => {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
 
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('lab_billiard_token') || '');
-  const [currentUser, setCurrentUser] = useState(() => {
-    const cached = localStorage.getItem('lab_billiard_user');
-    return cached ? JSON.parse(cached) : null;
-  });
+  const [currentUser, setCurrentUser] = useState(() => safeParseJson(localStorage.getItem('lab_billiard_user'), null));
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -51,10 +60,7 @@ function App() {
     accountNumber: '',
     accountHolder: ''
   });
-  const [cartItems, setCartItems] = useState(() => {
-    const cached = localStorage.getItem('lab_billiard_cart');
-    return cached ? JSON.parse(cached) : [];
-  });
+  const [cartItems, setCartItems] = useState(() => safeParseJson(localStorage.getItem('lab_billiard_cart'), []));
 
   const {
     isLoading,
@@ -63,14 +69,22 @@ function App() {
     p3Lines,
     poisonMaeliths,
     poisonCandies,
+    breakJumpLines,
     limitedEditions,
     products,
     cueCategories,
     tableCategories,
     shaftCategories,
     caseCategories,
-    accessoryCategories
+    accessoryCategories,
+    shaftLines,
+    caseLines,
+    accessoryLines,
+    tableLines,
+    refreshCatalog
   } = useCatalogData();
+
+  const wasAdminRouteRef = useRef(false);
 
   const poisonMaelithVideoSrc = encodeURI(
     '/Every player has their Poison.Candy 🍬 Maelith 🌒 VX Break ⚡️Which world are you stepping into.mp4'
@@ -104,7 +118,12 @@ function App() {
     p3Lines,
     limitedEditions,
     poisonMaeliths,
-    poisonCandies
+    poisonCandies,
+    breakJumpLines,
+    shaftLines,
+    caseLines,
+    accessoryLines,
+    tableLines
   });
 
   const openLineDetailPageBase = useCallback((lineItem) => {
@@ -137,6 +156,43 @@ function App() {
     navigate(`/line/${seriesKey}`);
     resetSearchPanel();
   };
+
+  const resolveMenuLineItem = useCallback((menuItemName, fallbackSeriesKey) => {
+    const normalizedMenuName = normalizeSearchText(menuItemName);
+
+    if (!normalizedMenuName) {
+      return null;
+    }
+
+    const exactMatch = productLineItems.find(
+      (item) => normalizeSearchText(item?.name) === normalizedMenuName
+    );
+
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const candidates = productLineItems.filter((item) => {
+      if (fallbackSeriesKey && item.seriesKey !== fallbackSeriesKey) {
+        return false;
+      }
+
+      const candidateText = normalizeSearchText(
+        [item?.name, item?.seriesTitle, item?.category, item?.brand]
+          .filter(Boolean)
+          .join(' ')
+      );
+
+      if (!candidateText) {
+        return false;
+      }
+
+      const menuTokens = normalizedMenuName.split(' ').filter(Boolean);
+      return menuTokens.every((token) => candidateText.includes(token));
+    });
+
+    return candidates[0] || null;
+  }, [productLineItems]);
 
   const openAdminPage = () => {
     navigate('/admin');
@@ -210,6 +266,17 @@ function App() {
     setIsCartOpen(false);
     setIsOrdersOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const pathname = location.pathname.toLowerCase();
+    const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin/');
+
+    if (wasAdminRouteRef.current && !isAdminRoute) {
+      refreshCatalog();
+    }
+
+    wasAdminRouteRef.current = isAdminRoute;
+  }, [location.pathname, refreshCatalog]);
 
   const cartItemCount = cartItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
@@ -341,7 +408,7 @@ function App() {
     }
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (checkoutData = {}) => {
     if (!currentUser) {
       setAuthError('Please log in to complete checkout.');
       setIsAuthModalOpen(true);
@@ -357,9 +424,12 @@ function App() {
       fullName: shippingInfo.fullName.trim(),
       phone: shippingInfo.phone.trim(),
       addressLine1: shippingInfo.addressLine1.trim(),
+      ward: (shippingInfo.ward || '').trim(),
+      district: (shippingInfo.district || '').trim(),
       city: shippingInfo.city.trim(),
-      country: shippingInfo.country.trim(),
-      postalCode: shippingInfo.postalCode.trim()
+      province: (shippingInfo.province || '').trim(),
+      country: shippingInfo.country.trim() || 'Vietnam',
+      postalCode: shippingInfo.postalCode.trim() || '700000'
     };
     const paymentFields = {
       method: paymentInfo.method,
@@ -380,14 +450,18 @@ function App() {
       return;
     }
 
-    const createOrder = async (method) => {
+    const createOrder = async (method, checkoutData = {}) => {
       const response = await axios.post(
         'http://localhost:5000/api/orders',
         {
-          items: cartItems,
+          items: cartItems.map(item => ({
+            ...item,
+            configuration: item.configuration || undefined
+          })),
           currencySymbol: '$',
           shippingAddress: shippingFields,
-          payment: { method }
+          payment: { method },
+          voucherCode: checkoutData.voucherCode || ''
         },
         {
           headers: {
@@ -408,7 +482,7 @@ function App() {
     setCartError('');
 
     try {
-      await createOrder('cod');
+      await createOrder('cod', checkoutData);
     } catch (error) {
       setAuthError(error?.response?.data?.message || 'Checkout failed. Please try again.');
       setIsAuthModalOpen(true);
@@ -493,6 +567,8 @@ function App() {
       getCategoriesByType={getCategoriesByType}
       getMenuSeriesKey={getMenuSeriesKey}
       openLineSeriesPage={openLineSeriesPage}
+      openLineDetailPage={openLineDetailPage}
+      resolveMenuLineItem={resolveMenuLineItem}
       searchPanelRef={searchPanelRef}
       closeSearchPanel={closeSearchPanel}
       searchInputRef={searchInputRef}
@@ -566,6 +642,7 @@ function App() {
       onClose={() => setIsOrdersOpen(false)}
       orders={orders}
       isLoading={isOrdersLoading}
+      authToken={authToken}
     />
   );
 
@@ -591,7 +668,6 @@ function App() {
   if (isAdminRoute) {
     return (
       <div className="page-container">
-        {navbarNode}
         {authSuccessToastNode}
         <AdminPage
           currentUser={currentUser}
@@ -612,9 +688,69 @@ function App() {
     p3: 'p3',
     maelith: 'maelith',
     candy: 'candy',
+    breakjump: 'breakjump',
+    'break-jump': 'breakjump',
+    'bk-rush-break': 'bk-rush-break',
+    'bk-rush-jump-break': 'bk-rush-jump-break',
+    'poison-vx-break-jump': 'poison-vx-break-jump',
+    'bk4-break': 'bk4-break',
+    'air-rush-jump': 'air-rush-jump',
+    'air-ii-jump': 'air-ii-jump',
     limited: 'limited',
-    limitededition: 'limited'
+    limitededition: 'limited',
+    allcues: 'allcues',
+    // Shafts
+    shafts: 'shafts',
+    'shafts-revo': 'shafts-revo',
+    'shafts-centro': 'shafts-centro',
+    'shafts-314': 'shafts-314',
+    'shafts-z3': 'shafts-z3',
+    'shafts-vantage': 'shafts-vantage',
+    'shafts-bk2': 'shafts-bk2',
+    'shafts-carbon': 'shafts-carbon',
+    'shafts-maple': 'shafts-maple',
+    // Cases
+    cases: 'cases',
+    'cases-legacy': 'cases-legacy',
+    'cases-urbain': 'cases-urbain',
+    'cases-metro': 'cases-metro',
+    'cases-roadline': 'cases-roadline',
+    'cases-poison': 'cases-poison',
+    'cases-carom': 'cases-carom',
+    'cases-1x1': 'cases-1x1',
+    'cases-2x4': 'cases-2x4',
+    'cases-3x4': 'cases-3x4',
+    'cases-3x5': 'cases-3x5',
+    'cases-3x6': 'cases-3x6',
+    'cases-4x8': 'cases-4x8',
+    // Accessories
+    accessories: 'accessories',
+    'acc-aerorack': 'acc-aerorack',
+    'acc-pool-balls': 'acc-pool-balls',
+    'acc-cue-balls': 'acc-cue-balls',
+    'acc-cloth': 'acc-cloth',
+    'acc-chalk': 'acc-chalk',
+    'acc-pure-chalk': 'acc-pure-chalk',
+    'acc-gloves': 'acc-gloves',
+    'acc-extensions': 'acc-extensions',
+    'acc-tips': 'acc-tips',
+    'acc-maintenance': 'acc-maintenance',
+    'acc-holders': 'acc-holders',
+    'acc-weight': 'acc-weight',
+    'acc-joint-protectors': 'acc-joint-protectors',
+    'acc-parts': 'acc-parts',
+    'acc-towel': 'acc-towel',
+    'acc-table': 'acc-table',
+    'acc-cue': 'acc-cue',
+    // Tables
+    tables: 'tables',
+    'tables-apex': 'tables-apex',
+    'tables-arc': 'tables-arc',
+    'tables-9ft': 'tables-9ft',
+    'tables-8ft': 'tables-8ft',
+    'tables-7ft': 'tables-7ft'
   };
+
 
   const detailFallbackSeriesKey =
     lineRoute?.type === 'detail'

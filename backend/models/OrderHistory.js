@@ -5,7 +5,7 @@ const orderHistorySchema = new mongoose.Schema(
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
     status: {
       type: String,
-      enum: ['pending', 'processing', 'packing', 'shipped', 'in-transit', 'delivered', 'cancelled', 'returned'],
+      enum: ['pending', 'paid', 'processing', 'packing', 'shipped', 'in-transit', 'delivered', 'cancelled', 'returned'],
       required: true
     },
     reason: { type: String, trim: true }, // lý do thay đổi trạng thái

@@ -1,25 +1,52 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import AdminDashboardSection from '../components/admin/AdminDashboardSection';
+import AdminProductsSection from '../components/admin/AdminProductsSection';
+import AdminInventorySection from '../components/admin/AdminInventorySection';
+import AdminUsersSection from '../components/admin/AdminUsersSection';
+import AdminOrdersSection from '../components/admin/AdminOrdersSection';
+import AdminAnalyticsSection from '../components/admin/AdminAnalyticsSection';
+import { LINE_TYPE_OPTIONS, NEXT_STATUS, STATUS_OPTIONS } from './admin/adminConstants';
 
 function AdminPage({ currentUser, authToken, onRequireLogin }) {
-  const lineTypeOptions = [
-    { value: 'truesplice', label: 'True Splice' },
-    { value: 'p3', label: 'P3' },
-    { value: 'poison-maelith', label: 'Poison Maelith' },
-    { value: 'poison-candy', label: 'Poison Candy' },
-    { value: 'limited', label: 'Limited Edition' }
-  ];
-
-  const [tab, setTab] = useState('products');
+  const [tab, setTab] = useState('dashboard');
+  const [productStatusFilter, setProductStatusFilter] = useState('all');
+  const [productSortBy, setProductSortBy] = useState('order-asc');
+  const [activeProductQuickActionId, setActiveProductQuickActionId] = useState('');
   const [productLineTypeTab, setProductLineTypeTab] = useState('truesplice');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-
   const [products, setProducts] = useState([]);
   const [users, setUsers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [inventoryWarnings, setInventoryWarnings] = useState([]);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryLineFilter, setInventoryLineFilter] = useState('all');
+  const [inventorySortBy, setInventorySortBy] = useState('low-first');
+  const [isBootstrappingInventory, setIsBootstrappingInventory] = useState(false);
   const [analytics, setAnalytics] = useState(null);
+  const [selectedLineItem, setSelectedLineItem] = useState(null);
+  const [variants, setVariants] = useState([]);
+  const [editingVariantId, setEditingVariantId] = useState('');
+  const [editingVariantDraft, setEditingVariantDraft] = useState({
+    sku: '',
+    shaft: 'Revo',
+    collar: 'Uni-Loc',
+    weight: '19 oz',
+    wrap: 'No Wrap',
+    priceAdjustment: '0'
+  });
+
+  const [variantDraft, setVariantDraft] = useState({
+    sku: '',
+    shaft: 'Revo',
+    collar: 'Uni-Loc',
+    weight: '19 oz',
+    wrap: 'No Wrap',
+    priceAdjustment: '0',
+    quantity: '0'
+  });
 
   const [productDraft, setProductDraft] = useState({
     lineType: 'truesplice',
@@ -58,14 +85,54 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
   const isAdmin = currentUser?.role === 'admin';
 
   const lineTypeLabelMap = useMemo(
-    () => Object.fromEntries(lineTypeOptions.map((item) => [item.value, item.label])),
-    [lineTypeOptions]
+    () => Object.fromEntries(LINE_TYPE_OPTIONS.map((item) => [item.value, item.label])),
+    []
   );
 
-  const filteredProducts = useMemo(
+  const statusLabelMap = useMemo(
+    () => Object.fromEntries(STATUS_OPTIONS.map((item) => [item.value, item.label])),
+    []
+  );
+
+  const productsInCurrentLine = useMemo(
     () => products.filter((item) => item.lineType === productLineTypeTab),
     [products, productLineTypeTab]
   );
+
+  const filteredProducts = useMemo(() => {
+    const result = productsInCurrentLine.filter((item) => {
+      const matchesStatus =
+        productStatusFilter === 'all'
+          ? true
+          : productStatusFilter === 'active'
+            ? item.isActive !== false
+            : item.isActive === false;
+
+      return matchesStatus;
+    });
+
+    const sorted = [...result];
+    if (productSortBy === 'order-desc') {
+      sorted.sort((a, b) => Number(b.order || 0) - Number(a.order || 0));
+    } else if (productSortBy === 'price-asc') {
+      sorted.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    } else if (productSortBy === 'price-desc') {
+      sorted.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+    } else if (productSortBy === 'name-asc') {
+      sorted.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    } else {
+      sorted.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    }
+
+    return sorted;
+  }, [productsInCurrentLine, productStatusFilter, productSortBy]);
+
+  const productSummary = useMemo(() => {
+    const total = productsInCurrentLine.length;
+    const active = productsInCurrentLine.filter((item) => item.isActive !== false).length;
+    const inactive = total - active;
+    return { total, active, inactive };
+  }, [productsInCurrentLine]);
 
   const productCountByType = useMemo(() => {
     return products.reduce((acc, item) => {
@@ -75,13 +142,86 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
     }, {});
   }, [products]);
 
+  const inventoryByVariantId = useMemo(() => {
+    const map = new Map();
+    inventory.forEach((item) => {
+      if (item.variantId?._id) {
+        map.set(item.variantId._id, item);
+      }
+    });
+    return map;
+  }, [inventory]);
+
+  const productInventorySummary = useMemo(() => {
+    const map = new Map();
+    inventory.forEach((item) => {
+      const productId = typeof item.productId === 'string' ? item.productId : item.productId?._id;
+      if (!productId) {
+        return;
+      }
+
+      const current = map.get(productId) || { variantCount: 0, quantity: 0, reserved: 0, available: 0 };
+      const quantity = Number(item.quantity || 0);
+      const reserved = Number(item.reserved || 0);
+      const available = quantity - reserved;
+
+      map.set(productId, {
+        variantCount: current.variantCount + 1,
+        quantity: current.quantity + quantity,
+        reserved: current.reserved + reserved,
+        available: current.available + available
+      });
+    });
+
+    return map;
+  }, [inventory]);
+
+  const filteredInventory = useMemo(() => {
+    const normalizedQuery = String(inventorySearch || '').trim().toLowerCase();
+
+    const filtered = inventory.filter((item) => {
+      const matchesLineType = inventoryLineFilter === 'all' ? true : item.lineType === inventoryLineFilter;
+      if (!matchesLineType) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const lineName = String(item.lineName || '').toLowerCase();
+      const sku = String(item.variantId?.sku || '').toLowerCase();
+      const location = String(item.location || '').toLowerCase();
+      return lineName.includes(normalizedQuery) || sku.includes(normalizedQuery) || location.includes(normalizedQuery);
+    });
+
+    const sorted = [...filtered];
+    if (inventorySortBy === 'high-first') {
+      sorted.sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0));
+    } else if (inventorySortBy === 'name-asc') {
+      sorted.sort((a, b) => String(a.lineName || '').localeCompare(String(b.lineName || '')));
+    } else {
+      sorted.sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0));
+    }
+
+    return sorted;
+  }, [inventory, inventoryLineFilter, inventorySearch, inventorySortBy]);
+
   useEffect(() => {
     setProductDraft((prev) => ({ ...prev, lineType: productLineTypeTab }));
   }, [productLineTypeTab]);
 
   const loadProducts = async () => {
     const response = await axios.get('http://localhost:5000/api/admin/products', { headers: authHeaders });
-    setProducts(Array.isArray(response.data?.products) ? response.data.products : []);
+    const productList = Array.isArray(response.data?.products) ? response.data.products : [];
+    setProducts(productList);
+
+    if (!selectedLineItem) {
+      return;
+    }
+
+    const updatedSelected = productList.find((item) => item._id === selectedLineItem._id) || null;
+    setSelectedLineItem(updatedSelected);
   };
 
   const loadUsers = async () => {
@@ -99,16 +239,47 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
     setInventory(Array.isArray(response.data?.inventory) ? response.data.inventory : []);
   };
 
+  const loadInventoryWarnings = async () => {
+    const response = await axios.get('http://localhost:5000/api/admin/inventory/warnings?threshold=2', { headers: authHeaders });
+    setInventoryWarnings(Array.isArray(response.data?.warnings) ? response.data.warnings : []);
+  };
+
+  const loadVariants = async (lineItem) => {
+    if (!lineItem?._id) {
+      setVariants([]);
+      return;
+    }
+
+    const response = await axios.get(`http://localhost:5000/api/admin/products/${lineItem._id}/variants`, {
+      headers: authHeaders,
+      params: { lineType: lineItem.lineType }
+    });
+
+    setVariants(Array.isArray(response.data?.variants) ? response.data.variants : []);
+  };
+
   const loadAnalytics = async () => {
-    const [revenueRes, topProductsRes] = await Promise.all([
+    const [revenueRes, topProductsRes, kpiRes] = await Promise.all([
       axios.get('http://localhost:5000/api/admin/analytics/revenue?days=30', { headers: authHeaders }),
-      axios.get('http://localhost:5000/api/admin/analytics/top-products?days=30', { headers: authHeaders })
+      axios.get('http://localhost:5000/api/admin/analytics/top-products?days=30', { headers: authHeaders }),
+      axios.get('http://localhost:5000/api/admin/analytics/kpis', { headers: authHeaders })
     ]);
 
     setAnalytics({
       revenue: revenueRes.data,
-      topProducts: topProductsRes.data.topProducts || []
+      topProducts: topProductsRes.data.topProducts || [],
+      kpis: kpiRes.data || {}
     });
+  };
+
+  const loadDashboardData = async () => {
+    await Promise.all([
+      loadProducts(),
+      loadUsers(),
+      loadOrders(),
+      loadInventoryWarnings(),
+      loadAnalytics()
+    ]);
   };
 
   useEffect(() => {
@@ -122,11 +293,13 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
 
       try {
         if (tab === 'products') {
-          await loadProducts();
+          await Promise.all([loadProducts(), loadInventory()]);
+        } else if (tab === 'dashboard') {
+          await loadDashboardData();
         } else if (tab === 'users') {
           await loadUsers();
         } else if (tab === 'inventory') {
-          await loadInventory();
+          await Promise.all([loadInventory(), loadInventoryWarnings()]);
         } else if (tab === 'orders') {
           await loadOrders();
         } else if (tab === 'analytics') {
@@ -141,6 +314,22 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
 
     loadTabData();
   }, [authToken, isAdmin, tab]);
+
+  useEffect(() => {
+    if (tab !== 'products' || !selectedLineItem?._id) {
+      return;
+    }
+
+    const run = async () => {
+      try {
+        await loadVariants(selectedLineItem);
+      } catch (err) {
+        setError(err?.response?.data?.message || 'Cannot load variants.');
+      }
+    };
+
+    run();
+  }, [tab, selectedLineItem?._id]);
 
   const handleCreateProduct = async (event) => {
     event.preventDefault();
@@ -166,6 +355,7 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
         order: '0',
         isActive: true
       });
+
       await loadProducts();
     } catch (err) {
       setError(err?.response?.data?.message || 'Cannot create line item.');
@@ -211,9 +401,124 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
         headers: authHeaders,
         params: { lineType }
       });
+      if (selectedLineItem?._id === productId) {
+        setSelectedLineItem(null);
+        setVariants([]);
+      }
       await loadProducts();
     } catch (err) {
       setError(err?.response?.data?.message || 'Cannot delete line item.');
+    }
+  };
+
+  const handleToggleProductActive = async (product) => {
+    try {
+      setActiveProductQuickActionId(product._id);
+      await axios.put(
+        `http://localhost:5000/api/admin/products/${product._id}`,
+        {
+          lineType: product.lineType,
+          name: product.name,
+          image: product.image || (Array.isArray(product.images) ? (product.images[0] || '') : ''),
+          lineSeriesImage: product.lineSeriesImage || '',
+          price: Number(product.price || 0),
+          order: Number(product.order || 0),
+          isActive: !(product.isActive !== false)
+        },
+        { headers: authHeaders }
+      );
+      await loadProducts();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot toggle product status.');
+    } finally {
+      setActiveProductQuickActionId('');
+    }
+  };
+
+  const handleCreateVariant = async (event) => {
+    event.preventDefault();
+    if (!selectedLineItem?._id) {
+      setError('Please select a line item before adding variants.');
+      return;
+    }
+
+    try {
+      await axios.post(
+        `http://localhost:5000/api/admin/products/${selectedLineItem._id}/variants`,
+        {
+          lineType: selectedLineItem.lineType,
+          sku: variantDraft.sku,
+          shaft: variantDraft.shaft,
+          collar: variantDraft.collar,
+          weight: variantDraft.weight,
+          wrap: variantDraft.wrap,
+          priceAdjustment: Number(variantDraft.priceAdjustment || 0),
+          quantity: Number(variantDraft.quantity || 0),
+          reorderLevel: 5
+        },
+        { headers: authHeaders }
+      );
+
+      setVariantDraft({
+        sku: '',
+        shaft: 'Revo',
+        collar: 'Uni-Loc',
+        weight: '19 oz',
+        wrap: 'No Wrap',
+        priceAdjustment: '0',
+        quantity: '0'
+      });
+
+      await Promise.all([loadVariants(selectedLineItem), loadInventory(), loadInventoryWarnings()]);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot create variant.');
+    }
+  };
+
+  const beginEditVariant = (variant) => {
+    setEditingVariantId(variant._id);
+    setEditingVariantDraft({
+      sku: variant.sku || '',
+      shaft: variant.shaft || 'Revo',
+      collar: variant.joint || 'Uni-Loc',
+      weight: variant.weight || '19 oz',
+      wrap: variant.wrap || 'No Wrap',
+      priceAdjustment: String(variant.priceAdjustment ?? 0)
+    });
+  };
+
+  const handleSaveVariant = async () => {
+    if (!editingVariantId) {
+      return;
+    }
+
+    try {
+      await axios.put(
+        `http://localhost:5000/api/admin/variants/${editingVariantId}`,
+        {
+          sku: editingVariantDraft.sku,
+          shaft: editingVariantDraft.shaft,
+          collar: editingVariantDraft.collar,
+          weight: editingVariantDraft.weight,
+          wrap: editingVariantDraft.wrap,
+          priceAdjustment: Number(editingVariantDraft.priceAdjustment || 0)
+        },
+        { headers: authHeaders }
+      );
+
+      setEditingVariantId('');
+      await loadVariants(selectedLineItem);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot update variant.');
+    }
+  };
+
+  const handleDeleteVariant = async (variantId) => {
+    try {
+      await axios.delete(`http://localhost:5000/api/admin/variants/${variantId}`, { headers: authHeaders });
+      await Promise.all([loadVariants(selectedLineItem), loadInventory(), loadInventoryWarnings()]);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot delete variant.');
     }
   };
 
@@ -256,18 +561,138 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
     }
   };
 
-  const handleUpdateInventory = async (inventoryId, newQuantity) => {
+  const handleMoveOrderToNextStatus = async (order) => {
+    const nextStatus = NEXT_STATUS[order.status];
+    if (!nextStatus) {
+      return;
+    }
+
+    try {
+      await axios.put(
+        `http://localhost:5000/api/admin/orders/${order._id}`,
+        {
+          status: nextStatus,
+          notes: order.notes || '',
+          assignedWarehouse: order.assignedWarehouse || 'Main Warehouse',
+          tracking: {
+            number: order.tracking?.number || '',
+            carrier: order.tracking?.carrier || '',
+            currentLocation: order.tracking?.currentLocation || ''
+          }
+        },
+        { headers: authHeaders }
+      );
+
+      await loadOrders();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot update order status.');
+    }
+  };
+
+  const handleUpdateInventory = async (inventoryId, payload) => {
     try {
       await axios.put(
         `http://localhost:5000/api/admin/inventory/${inventoryId}`,
-        { quantity: Number(newQuantity || 0), inventoryId },
+        { ...payload, inventoryId },
         { headers: authHeaders }
       );
-      await loadInventory();
+      await Promise.all([loadInventory(), loadInventoryWarnings()]);
     } catch (err) {
       setError(err?.response?.data?.message || 'Cannot update inventory.');
     }
   };
+
+  const handleBootstrapInventory = async () => {
+    try {
+      setIsBootstrappingInventory(true);
+      await axios.post(
+        'http://localhost:5000/api/admin/inventory/bootstrap',
+        { defaultQuantity: 10, defaultReorderLevel: 5 },
+        { headers: authHeaders }
+      );
+
+      await Promise.all([loadProducts(), loadInventory(), loadInventoryWarnings()]);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cannot bootstrap inventory.');
+    } finally {
+      setIsBootstrappingInventory(false);
+    }
+  };
+
+  const weeklyRevenue = Array.isArray(analytics?.kpis?.weeklyRevenue)
+    ? analytics.kpis.weeklyRevenue
+    : [];
+  const weeklyTotal = useMemo(
+    () => weeklyRevenue.reduce((sum, item) => sum + Number(item?.revenue || 0), 0),
+    [weeklyRevenue]
+  );
+
+  const topCategories = useMemo(() => {
+    const source = Array.isArray(analytics?.topProducts) ? analytics.topProducts : [];
+    return source.slice(0, 5);
+  }, [analytics?.topProducts]);
+  const topCategoriesTotal = useMemo(
+    () => topCategories.reduce((sum, item) => sum + Number(item?.revenue || 0), 0),
+    [topCategories]
+  );
+
+  const revenueByDay = useMemo(
+    () => {
+      const source = Array.isArray(analytics?.revenue?.dailyRevenue)
+        ? analytics.revenue.dailyRevenue
+        : [];
+      return source.reduce((sum, item) => sum + Number(item?.revenue || 0), 0);
+    },
+    [analytics?.revenue?.dailyRevenue]
+  );
+
+  const monthlyTarget = 600000;
+  const monthlyProgress = Math.min(100, Math.round((revenueByDay / monthlyTarget) * 100) || 0);
+
+  const orderStatusCounts = useMemo(() => {
+    return orders.reduce((acc, order) => {
+      const key = order.status || 'pending';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+  }, [orders]);
+
+  const totalOrders = orders.length;
+  const activeUsers = users.filter((user) => user.role !== 'admin').length;
+
+  const categoryDonutStyle = useMemo(() => {
+    if (!topCategoriesTotal) {
+      return {
+        background: 'conic-gradient(#ff8a00 0deg 120deg, #ffd3a6 120deg 240deg, #ffe6cd 240deg 360deg)'
+      };
+    }
+
+    const palette = ['#ff8a00', '#ffab4d', '#ffc784', '#ffdcb4', '#ffe9d3'];
+    let cursor = 0;
+    const segments = topCategories.map((item, index) => {
+      const ratio = Number(item?.revenue || 0) / topCategoriesTotal;
+      const deg = Math.max(6, Math.round(ratio * 360));
+      const start = cursor;
+      const end = Math.min(360, cursor + deg);
+      cursor = end;
+      return `${palette[index % palette.length]} ${start}deg ${end}deg`;
+    });
+
+    if (cursor < 360) {
+      segments.push(`#ffe9d3 ${cursor}deg 360deg`);
+    }
+
+    return { background: `conic-gradient(${segments.join(',')})` };
+  }, [topCategories, topCategoriesTotal]);
+
+  const tabTitle = {
+    dashboard: 'Dashboard',
+    products: 'Product Management',
+    users: 'Customer Management',
+    inventory: 'Inventory Control',
+    orders: 'Order Workflow',
+    analytics: 'Business Reports'
+  }[tab] || 'Dashboard';
 
   if (!currentUser) {
     return (
@@ -295,319 +720,144 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
   }
 
   return (
-    <main className="admin-page">
-      <section className="admin-shell">
-        <header className="admin-head">
-          <div>
-            <p className="admin-kicker">Lab Billiard</p>
-            <h1 className="admin-title">Admin Dashboard</h1>
+    <main className="admx-page">
+      <section className="admx-layout">
+        <aside className="admx-sidebar" aria-label="Admin navigation">
+          <div className="admx-brand">Lab Billiard</div>
+          <nav className="admx-nav" role="tablist" aria-label="Admin sections">
+            <button type="button" className={`admx-nav-btn ${tab === 'dashboard' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'orders' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('orders')}>Orders</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'products' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('products')}>Products</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'users' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('users')}>Customers</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'inventory' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('inventory')}>Inventory</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'analytics' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('analytics')}>Reports</button>
+          </nav>
+          <div className="admx-side-foot">
+            <p className="admx-side-meta">Admin</p>
+            <strong>{currentUser?.name || 'Administrator'}</strong>
           </div>
-          <div className="admin-tabs" role="tablist" aria-label="Admin sections">
-            <button type="button" className={`admin-tab ${tab === 'products' ? 'admin-tab-active' : ''}`} onClick={() => setTab('products')}>Products</button>
-            <button type="button" className={`admin-tab ${tab === 'users' ? 'admin-tab-active' : ''}`} onClick={() => setTab('users')}>Users</button>
-            <button type="button" className={`admin-tab ${tab === 'inventory' ? 'admin-tab-active' : ''}`} onClick={() => setTab('inventory')}>Inventory</button>
-            <button type="button" className={`admin-tab ${tab === 'orders' ? 'admin-tab-active' : ''}`} onClick={() => setTab('orders')}>Orders</button>
-            <button type="button" className={`admin-tab ${tab === 'analytics' ? 'admin-tab-active' : ''}`} onClick={() => setTab('analytics')}>Analytics</button>
-          </div>
-        </header>
+        </aside>
 
-        {error ? <p className="admin-error">{error}</p> : null}
-        {isLoading ? <p className="admin-loading">Loading...</p> : null}
-
-          {!isLoading && tab === 'products' ? (
-            <section className="admin-card">
-                <h2 className="admin-section-title">Manage Cue Lines By Collection</h2>
-                <div className="admin-tabs" role="tablist" aria-label="Cue line collections">
-                  {lineTypeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`admin-tab ${productLineTypeTab === option.value ? 'admin-tab-active' : ''}`}
-                      onClick={() => {
-                        setProductLineTypeTab(option.value);
-                        setEditingProductId('');
-                      }}
-                    >
-                      {option.label} ({productCountByType[option.value] || 0})
-                    </button>
-                  ))}
-                </div>
-
-                <p className="admin-loading">
-                  Adding item to: <strong>{lineTypeLabelMap[productLineTypeTab] || productLineTypeTab}</strong>
-                </p>
-
-              <form className="admin-product-form" onSubmit={handleCreateProduct}>
-                <input className="admin-input" placeholder="Name" value={productDraft.name} onChange={(e) => setProductDraft((p) => ({ ...p, name: e.target.value }))} required />
-                <input className="admin-input" placeholder="Image URL" value={productDraft.image} onChange={(e) => setProductDraft((p) => ({ ...p, image: e.target.value }))} required />
-                <input className="admin-input" placeholder="Line Series Image URL" value={productDraft.lineSeriesImage} onChange={(e) => setProductDraft((p) => ({ ...p, lineSeriesImage: e.target.value }))} />
-                <input className="admin-input" placeholder="Price" type="number" min="0" value={productDraft.price} onChange={(e) => setProductDraft((p) => ({ ...p, price: e.target.value }))} required />
-                <input className="admin-input" placeholder="Order" type="number" min="0" value={productDraft.order} onChange={(e) => setProductDraft((p) => ({ ...p, order: e.target.value }))} />
-                <label className="admin-select">
-                  <input
-                    type="checkbox"
-                    checked={productDraft.isActive}
-                    onChange={(e) => setProductDraft((p) => ({ ...p, isActive: e.target.checked }))}
-                  />
-                  {' '}Active
-                </label>
-                <button type="submit" className="admin-primary-btn">Add Line Item</button>
-              </form>
-
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Collection</th>
-                      <th>Name</th>
-                      <th>Price</th>
-                      <th>Order</th>
-                      <th>Active</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProducts.map((product) => (
-                      <tr key={product._id}>
-                        {editingProductId === product._id ? (
-                          <>
-                            <td>{lineTypeLabelMap[editingProductDraft.lineType] || editingProductDraft.lineType}</td>
-                            <td><input className="admin-input" value={editingProductDraft.name} onChange={(e) => setEditingProductDraft((p) => ({ ...p, name: e.target.value }))} /></td>
-                            <td><input className="admin-input" type="number" min="0" value={editingProductDraft.price} onChange={(e) => setEditingProductDraft((p) => ({ ...p, price: e.target.value }))} /></td>
-                            <td><input className="admin-input" type="number" min="0" value={editingProductDraft.order} onChange={(e) => setEditingProductDraft((p) => ({ ...p, order: e.target.value }))} /></td>
-                            <td>
-                              <input
-                                type="checkbox"
-                                checked={editingProductDraft.isActive}
-                                onChange={(e) => setEditingProductDraft((p) => ({ ...p, isActive: e.target.checked }))}
-                              />
-                            </td>
-                            <td>
-                              <button type="button" className="admin-link-btn" onClick={handleSaveProduct}>Save</button>
-                              <button type="button" className="admin-link-btn" onClick={() => setEditingProductId('')}>Cancel</button>
-                            </td>
-                          </>
-                        ) : (
-                          <>
-                            <td>{lineTypeLabelMap[product.lineType] || product.lineType}</td>
-                            <td>{product.name}</td>
-                            <td>${Number(product.price || 0).toFixed(2)}</td>
-                            <td>{product.order || 0}</td>
-                            <td>{product.isActive ? 'Yes' : 'No'}</td>
-                            <td>
-                              <button type="button" className="admin-link-btn" onClick={() => beginEditProduct(product)}>Edit</button>
-                              <button type="button" className="admin-link-btn admin-link-btn-danger" onClick={() => handleDeleteProduct(product._id, product.lineType)}>Delete</button>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                    {filteredProducts.length === 0 ? (
-                      <tr>
-                        <td colSpan={6}>No items in this collection.</td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+        <section className="admx-main">
+          <header className="admx-topbar">
+            <h1 className="admx-title">{tabTitle}</h1>
+            <div className="admx-topbar-right">
+              <div className="admx-user-chip">
+                <span className="admx-user-avatar">{(currentUser?.name || 'A').slice(0, 1).toUpperCase()}</span>
+                <span>{currentUser?.name || 'Administrator'}</span>
               </div>
-            </section>
+            </div>
+          </header>
+
+          {error ? <p className="admin-error">{error}</p> : null}
+          {isLoading ? <p className="admin-loading">Loading...</p> : null}
+
+          {!isLoading && tab === 'dashboard' ? (
+            <AdminDashboardSection
+              weeklyTotal={weeklyTotal}
+              totalOrders={totalOrders}
+              activeUsers={activeUsers}
+              inventoryWarnings={inventoryWarnings}
+              weeklyRevenue={weeklyRevenue}
+              monthlyProgress={monthlyProgress}
+              revenueByDay={revenueByDay}
+              monthlyTarget={monthlyTarget}
+              categoryDonutStyle={categoryDonutStyle}
+              topCategoriesTotal={topCategoriesTotal}
+              topCategories={topCategories}
+              orderStatusCounts={orderStatusCounts}
+            />
           ) : null}
 
-          {!isLoading && tab === 'users' ? (
-            <section className="admin-card">
-              <h2 className="admin-section-title">Manage Users</h2>
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Role</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((user) => (
-                      <tr key={user.id}>
-                        <td>{user.name}</td>
-                        <td>{user.email}</td>
-                        <td>
-                          <select
-                            className="admin-select"
-                            value={user.role || 'customer'}
-                            onChange={(e) => {
-                              const role = e.target.value;
-                              setUsers((prev) => prev.map((item) => (item.id === user.id ? { ...item, role } : item)));
-                            }}
-                          >
-                            <option value="customer">customer</option>
-                            <option value="admin">admin</option>
-                          </select>
-                        </td>
-                        <td>
-                          <button type="button" className="admin-link-btn" onClick={() => handleUpdateUserRole(user.id, user.role)}>Save</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
+        {!isLoading && tab === 'products' ? (
+          <AdminProductsSection
+            productSummary={productSummary}
+            productsInCurrentLine={productsInCurrentLine}
+            productInventorySummary={productInventorySummary}
+            productLineTypeTab={productLineTypeTab}
+            productCountByType={productCountByType}
+            setProductLineTypeTab={setProductLineTypeTab}
+            setEditingProductId={setEditingProductId}
+            setSelectedLineItem={setSelectedLineItem}
+            setVariants={setVariants}
+            productStatusFilter={productStatusFilter}
+            setProductStatusFilter={setProductStatusFilter}
+            productSortBy={productSortBy}
+            setProductSortBy={setProductSortBy}
+            handleCreateProduct={handleCreateProduct}
+            productDraft={productDraft}
+            setProductDraft={setProductDraft}
+            filteredProducts={filteredProducts}
+            selectedLineItem={selectedLineItem}
+            editingProductId={editingProductId}
+            editingProductDraft={editingProductDraft}
+            setEditingProductDraft={setEditingProductDraft}
+            lineTypeLabelMap={lineTypeLabelMap}
+            handleSaveProduct={handleSaveProduct}
+            activeProductQuickActionId={activeProductQuickActionId}
+            beginEditProduct={beginEditProduct}
+            handleToggleProductActive={handleToggleProductActive}
+            handleDeleteProduct={handleDeleteProduct}
+            variantDraft={variantDraft}
+            setVariantDraft={setVariantDraft}
+            handleCreateVariant={handleCreateVariant}
+            variants={variants}
+            inventoryByVariantId={inventoryByVariantId}
+            editingVariantId={editingVariantId}
+            editingVariantDraft={editingVariantDraft}
+            setEditingVariantDraft={setEditingVariantDraft}
+            handleSaveVariant={handleSaveVariant}
+            beginEditVariant={beginEditVariant}
+            handleDeleteVariant={handleDeleteVariant}
+          />
+        ) : null}
 
-          {!isLoading && tab === 'inventory' ? (
-            <section className="admin-card">
-              <h2 className="admin-section-title">Manage Inventory</h2>
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>SKU</th>
-                      <th>Product</th>
-                      <th>Quantity</th>
-                      <th>Reserved</th>
-                      <th>Available</th>
-                      <th>Reorder Level</th>
-                      <th>Location</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventory.map((inv) => (
-                      <tr key={inv._id} className={inv.quantity < inv.reorderLevel ? 'admin-row-warning' : ''}>
-                        <td>{inv.variantId?.sku || 'N/A'}</td>
-                        <td>{inv.productId?.name || 'N/A'}</td>
-                        <td>{inv.quantity}</td>
-                        <td>{inv.reserved || 0}</td>
-                        <td>{inv.quantity - (inv.reserved || 0)}</td>
-                        <td>{inv.reorderLevel}</td>
-                        <td>{inv.location}</td>
-                        <td>
-                          <input
-                            type="number"
-                            className="admin-input-small"
-                            defaultValue={inv.quantity}
-                            onBlur={(e) => handleUpdateInventory(inv._id, e.target.value)}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
+        {!isLoading && tab === 'users' ? (
+          <AdminUsersSection
+            users={users}
+            setUsers={setUsers}
+            handleUpdateUserRole={handleUpdateUserRole}
+          />
+        ) : null}
 
-          {!isLoading && tab === 'orders' ? (
-            <section className="admin-card">
-              <h2 className="admin-section-title">Manage Orders</h2>
-              <div className="admin-orders-list">
-                {orders.map((order) => (
-                  <article key={order._id} className={`admin-order-card ${editingOrderId === order._id ? 'admin-order-editing' : ''}`}>
-                    <div className="admin-order-head">
-                      <p className="admin-order-id">#{String(order._id).slice(-8).toUpperCase()}</p>
-                      {editingOrderId === order._id ? (
-                        <select className="admin-select" value={editingOrderDraft.status} onChange={(e) => setEditingOrderDraft((p) => ({ ...p, status: e.target.value }))}>
-                          <option value="pending">pending</option>
-                          <option value="processing">processing</option>
-                          <option value="packing">packing</option>
-                          <option value="shipped">shipped</option>
-                          <option value="in-transit">in-transit</option>
-                          <option value="delivered">delivered</option>
-                          <option value="cancelled">cancelled</option>
-                          <option value="returned">returned</option>
-                        </select>
-                      ) : (
-                        <span className="admin-order-status">{order.status}</span>
-                      )}
-                    </div>
+        {!isLoading && tab === 'inventory' ? (
+          <AdminInventorySection
+            handleBootstrapInventory={handleBootstrapInventory}
+            isBootstrappingInventory={isBootstrappingInventory}
+            inventorySearch={inventorySearch}
+            setInventorySearch={setInventorySearch}
+            inventoryLineFilter={inventoryLineFilter}
+            setInventoryLineFilter={setInventoryLineFilter}
+            inventorySortBy={inventorySortBy}
+            setInventorySortBy={setInventorySortBy}
+            inventoryWarnings={inventoryWarnings}
+            lineTypeLabelMap={lineTypeLabelMap}
+            filteredInventory={filteredInventory}
+            handleUpdateInventory={handleUpdateInventory}
+          />
+        ) : null}
 
-                    <p className="admin-order-meta">Customer: {order.user?.name || 'Unknown'} ({order.user?.email || 'n/a'})</p>
-                    <p className="admin-order-meta">Payment: {order.payment?.method || 'n/a'} {order.payment?.reference ? `• ${order.payment.reference}` : ''}</p>
-                    <p className="admin-order-meta">Total: ${Number(order.subtotal || 0).toFixed(2)}</p>
+        {!isLoading && tab === 'orders' ? (
+          <AdminOrdersSection
+            orders={orders}
+            editingOrderId={editingOrderId}
+            editingOrderDraft={editingOrderDraft}
+            setEditingOrderDraft={setEditingOrderDraft}
+            setEditingOrderId={setEditingOrderId}
+            statusLabelMap={statusLabelMap}
+            beginEditOrder={beginEditOrder}
+            handleMoveOrderToNextStatus={handleMoveOrderToNextStatus}
+            handleSaveOrder={handleSaveOrder}
+          />
+        ) : null}
 
-                    {editingOrderId === order._id ? (
-                      <div className="admin-order-edit">
-                        <input className="admin-input" placeholder="Warehouse" value={editingOrderDraft.assignedWarehouse} onChange={(e) => setEditingOrderDraft((p) => ({ ...p, assignedWarehouse: e.target.value }))} />
-                        <input className="admin-input" placeholder="Tracking Number" value={editingOrderDraft.tracking.number} onChange={(e) => setEditingOrderDraft((p) => ({ ...p, tracking: { ...p.tracking, number: e.target.value } }))} />
-                        <input className="admin-input" placeholder="Carrier" value={editingOrderDraft.tracking.carrier} onChange={(e) => setEditingOrderDraft((p) => ({ ...p, tracking: { ...p.tracking, carrier: e.target.value } }))} />
-                        <input className="admin-input" placeholder="Current Location" value={editingOrderDraft.tracking.currentLocation} onChange={(e) => setEditingOrderDraft((p) => ({ ...p, tracking: { ...p.tracking, currentLocation: e.target.value } }))} />
-                        <textarea className="admin-input" placeholder="Notes" value={editingOrderDraft.notes} onChange={(e) => setEditingOrderDraft((p) => ({ ...p, notes: e.target.value }))} />
-                        <button type="button" className="admin-link-btn" onClick={handleSaveOrder}>Save</button>
-                        <button type="button" className="admin-link-btn" onClick={() => setEditingOrderId('')}>Cancel</button>
-                      </div>
-                    ) : (
-                      <>
-                        {order.tracking?.number ? <p className="admin-order-meta">Tracking: {order.tracking.number} ({order.tracking.carrier})</p> : null}
-                        {order.tracking?.currentLocation ? <p className="admin-order-meta">Location: {order.tracking.currentLocation}</p> : null}
-                        {order.notes ? <p className="admin-order-meta">Notes: {order.notes}</p> : null}
-                        <button type="button" className="admin-link-btn" onClick={() => beginEditOrder(order)}>Edit</button>
-                      </>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {!isLoading && tab === 'analytics' ? (
-            <section className="admin-card">
-              <h2 className="admin-section-title">Analytics (Last 30 Days)</h2>
-              {analytics ? (
-                <div className="admin-analytics">
-                  <div className="admin-analytics-row">
-                    <div className="admin-analytics-card">
-                      <p className="admin-analytics-label">Total Revenue</p>
-                      <p className="admin-analytics-value">${Number(analytics.revenue?.totalRevenue || 0).toFixed(2)}</p>
-                    </div>
-                    <div className="admin-analytics-card">
-                      <p className="admin-analytics-label">Total Orders</p>
-                      <p className="admin-analytics-value">{analytics.revenue?.orderCount || 0}</p>
-                    </div>
-                    <div className="admin-analytics-card">
-                      <p className="admin-analytics-label">Average Order Value</p>
-                      <p className="admin-analytics-value">${Number(analytics.revenue?.averageOrderValue || 0).toFixed(2)}</p>
-                    </div>
-                  </div>
-
-                  <h3 className="admin-section-title">Top Selling Products</h3>
-                  <div className="admin-table-wrap">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Product</th>
-                          <th>Quantity Sold</th>
-                          <th>Revenue</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {analytics.topProducts.map((product) => (
-                          <tr key={product.name}>
-                            <td>{product.name}</td>
-                            <td>{product.quantity}</td>
-                            <td>${Number(product.revenue || 0).toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <h3 className="admin-section-title">Daily Revenue</h3>
-                  <div className="admin-daily-revenue">
-                    {Object.entries(analytics.revenue?.dailyRevenue || {}).map(([date, revenue]) => (
-                      <div key={date} className="admin-daily-item">
-                        <span className="admin-daily-date">{date}</span>
-                        <span className="admin-daily-value">${Number(revenue).toFixed(2)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
+        {!isLoading && tab === 'analytics' ? (
+          <AdminAnalyticsSection analytics={analytics} />
+        ) : null}
         </section>
-      </main>
-    );
-  }
+      </section>
+    </main>
+  );
+}
 
 export default AdminPage;

@@ -35,7 +35,7 @@ export const useNavbarState = ({
   const getCategoriesByType = (type) => {
     switch (type) {
       case 'cues':
-        return cueCategories;
+        return cueCategories.filter((category) => category.categoryName !== 'Pool Cues By Type');
       case 'shafts':
         return shaftCategories;
       case 'cases':

@@ -33,6 +33,13 @@ const banners = [
     link: '/',
     isActive: true,
     order: 5
+  },
+  {
+    title: 'BK Rush Break Cues',
+    image: 'https://int.predatorcues.com/cdn/shop/files/fabric-wrap-BK-ecom-_1__-_No_Logo.webp?v=1775850400&width=1920',
+    link: '/',
+    isActive: true,
+    order: 6
   }
 ];
 

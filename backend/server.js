@@ -23,19 +23,26 @@ const TrueSpliceLine = require('./models/TrueSpliceLine');
 const P3Line = require('./models/P3Line');
 const PoisonMaelith = require('./models/poisonMaelith');
 const PoisonCandy = require('./models/PoisonCandy');
+const BreakJumpLine = require('./models/BreakJumpLine');
 const CueCategory = require('./models/CueCategory');
 const limitedEdition = require('./models/LimitedEdition');
+const ShaftLine = require('./models/ShaftLine');
+const CaseLine = require('./models/CaseLine');
+const AccessoryLine = require('./models/AccessoryLine');
+const TableLine = require('./models/TableLine');
 const User = require('./models/User');
 const Order = require('./models/Order');
 const { ProductVariant, VariantOptions } = require('./models/ProductVariant');
 const Inventory = require('./models/Inventory');
 const OrderHistory = require('./models/OrderHistory');
+const createAdminVariantInventoryRouter = require('./routes/adminVariantInventoryRoutes');
 
 const ADMIN_LINE_MODELS = {
     truesplice: { model: TrueSpliceLine, label: 'True Splice' },
     p3: { model: P3Line, label: 'P3' },
     'poison-maelith': { model: PoisonMaelith, label: 'Poison Maelith' },
     'poison-candy': { model: PoisonCandy, label: 'Poison Candy' },
+    'break-jump': { model: BreakJumpLine, label: 'Break & Jump' },
     limited: { model: limitedEdition, label: 'Limited Edition' }
 };
 
@@ -57,6 +64,197 @@ const mapAdminLineItem = (item, lineType) => {
         isActive: plain.isActive !== false,
         images: Array.isArray(plain.images) ? plain.images : []
     };
+};
+
+const ORDER_WORKFLOW_STATUSES = ['pending', 'paid', 'packing', 'shipped', 'delivered', 'cancelled', 'returned'];
+
+const VOUCHER_CODES = {
+    'PREDATOR10': { type: 'percent', value: 10, description: 'Giảm 10%' },
+    'LABGIAM50K': { type: 'fixed', value: 50000, description: 'Giảm 50.000₫' },
+    'FREESHIP': { type: 'freeship', value: 0, description: 'Miễn phí vận chuyển' },
+    'WELCOME20': { type: 'percent', value: 20, description: 'Giảm 20% cho khách mới' }
+};
+
+const SHIPPING_SAME_CITY_FEE = 30000;
+const SHIPPING_DIFFERENT_CITY_FEE = 50000;
+const SELLER_CITY = 'Hồ Chí Minh';
+
+const calculateShippingFee = (city) => {
+    const normalizedCity = String(city || '').toLowerCase().replace(/[^a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+/g, ' ').trim();
+    const sellerNormalized = SELLER_CITY.toLowerCase().replace(/[^a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+/g, ' ').trim();
+    if (normalizedCity.includes(sellerNormalized) || sellerNormalized.includes(normalizedCity)) {
+        return SHIPPING_SAME_CITY_FEE;
+    }
+    return SHIPPING_DIFFERENT_CITY_FEE;
+};
+
+const applyVoucher = (code, subtotal, shippingFee) => {
+    const voucher = VOUCHER_CODES[String(code || '').toUpperCase().trim()];
+    if (!voucher) return { discount: 0, shippingFee, error: 'Mã giảm giá không hợp lệ' };
+    if (voucher.type === 'percent') {
+        return { discount: Math.round(subtotal * voucher.value / 100), shippingFee, error: null };
+    }
+    if (voucher.type === 'fixed') {
+        return { discount: Math.min(voucher.value, subtotal), shippingFee, error: null };
+    }
+    if (voucher.type === 'freeship') {
+        return { discount: 0, shippingFee: 0, error: null };
+    }
+    return { discount: 0, shippingFee, error: null };
+};
+const LINE_TYPE_SKU_PREFIX = {
+    truesplice: 'TS',
+    p3: 'P3',
+    'poison-maelith': 'PM',
+    'poison-candy': 'PC',
+    'break-jump': 'BJ',
+    limited: 'LE'
+};
+
+const sanitizeSkuSegment = (value) => String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 16);
+
+const buildDefaultVariantSku = (lineType, lineName, itemId) => {
+    const prefix = LINE_TYPE_SKU_PREFIX[lineType] || 'SKU';
+    const namePart = sanitizeSkuSegment(lineName).split('-').slice(0, 2).join('-') || 'ITEM';
+    const idPart = String(itemId || '').slice(-6).toUpperCase();
+    return `${prefix}-${namePart}-${idPart || '000000'}-STD`;
+};
+
+const toLineSlug = (value) => String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const buildLineItemLookup = async () => {
+    const byId = new Map();
+    const byName = new Map();
+    const bySlug = new Map();
+
+    for (const [lineType, config] of Object.entries(ADMIN_LINE_MODELS)) {
+        const docs = await config.model.find({}, '_id name').lean();
+        docs.forEach((doc) => {
+            const id = String(doc._id);
+            const name = String(doc.name || '').trim();
+            const nameKey = name.toLowerCase();
+            const slugKey = toLineSlug(name);
+
+            const resolved = {
+                productId: doc._id,
+                lineType,
+                lineName: name
+            };
+
+            byId.set(id, resolved);
+            if (nameKey) {
+                byName.set(nameKey, resolved);
+            }
+            if (slugKey) {
+                bySlug.set(slugKey, resolved);
+            }
+        });
+    }
+
+    return { byId, byName, bySlug };
+};
+
+const resolveOrderItemProduct = (item, lookup) => {
+    const itemId = String(item?.itemId || '').trim();
+    const itemName = String(item?.name || '').trim();
+
+    if (mongoose.Types.ObjectId.isValid(itemId)) {
+        const hitById = lookup.byId.get(itemId);
+        if (hitById) {
+            return hitById;
+        }
+    }
+
+    const nameKey = itemName.toLowerCase();
+    if (nameKey) {
+        const hitByName = lookup.byName.get(nameKey);
+        if (hitByName) {
+            return hitByName;
+        }
+    }
+
+    const slugCandidates = [toLineSlug(itemId), toLineSlug(itemName)].filter(Boolean);
+    for (const slugKey of slugCandidates) {
+        const hitBySlug = lookup.bySlug.get(slugKey);
+        if (hitBySlug) {
+            return hitBySlug;
+        }
+    }
+
+    return null;
+};
+
+const syncInventoryFromVariants = async () => {
+    const variants = await ProductVariant.find({}, '_id productId lineType lineName').lean();
+    if (variants.length === 0) {
+        return { synced: 0 };
+    }
+
+    const ops = variants.map((variant) => ({
+        updateOne: {
+            filter: { variantId: variant._id },
+            update: {
+                $set: {
+                    productId: variant.productId,
+                    lineType: variant.lineType,
+                    lineName: variant.lineName
+                },
+                $setOnInsert: {
+                    quantity: 0,
+                    reserved: 0,
+                    reorderLevel: 5,
+                    location: 'Main Warehouse'
+                }
+            },
+            upsert: true
+        }
+    }));
+
+    await Inventory.bulkWrite(ops, { ordered: false });
+    return { synced: variants.length };
+};
+
+const findLineItemById = async (lineItemId, lineType) => {
+    const normalizedType = normalizeLineType(lineType);
+
+    if (normalizedType) {
+        const config = getAdminLineConfig(normalizedType);
+        if (!config) {
+            return null;
+        }
+
+        const item = await config.model.findById(lineItemId);
+        if (!item) {
+            return null;
+        }
+
+        return {
+            lineType: normalizedType,
+            lineName: item.name,
+            item
+        };
+    }
+
+    for (const [type, config] of Object.entries(ADMIN_LINE_MODELS)) {
+        const item = await config.model.findById(lineItemId);
+        if (item) {
+            return {
+                lineType: type,
+                lineName: item.name,
+                item
+            };
+        }
+    }
+
+    return null;
 };
 
 const JWT_SECRET = process.env.JWT_SECRET || 'lab-billiard-dev-secret';
@@ -379,23 +577,101 @@ app.get('/api/admin/orders', requireAuth, requireAdmin, async (req, res) => {
 app.put('/api/admin/orders/:id/status', requireAuth, requireAdmin, async (req, res) => {
     try {
         const nextStatus = String(req.body?.status || '').trim();
-        const allowedStatuses = ['pending', 'processing', 'packing', 'shipped', 'in-transit', 'delivered', 'cancelled', 'returned'];
+        const allowedStatuses = ORDER_WORKFLOW_STATUSES;
 
         if (!allowedStatuses.includes(nextStatus)) {
             return res.status(400).json({ message: 'Invalid order status' });
         }
 
-        const order = await Order.findByIdAndUpdate(
-            req.params.id,
-            { status: nextStatus },
-            { new: true, runValidators: true }
-        ).populate('user', 'name email role');
-
+        const order = await Order.findById(req.params.id);
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
         }
 
-        return res.json({ order });
+        const previousStatus = order.status;
+
+        // When order transitions to 'paid', 'packing', or 'shipped', deduct actual stock
+        if ((nextStatus === 'paid' || nextStatus === 'packing' || nextStatus === 'shipped') && 
+            (previousStatus === 'pending' || previousStatus === 'processing')) {
+            // Deduct from actual inventory quantity
+            for (const item of order.items) {
+                const inventoryDocs = await Inventory.find({ productId: item.productId }).sort({ quantity: -1 });
+                let remaining = item.quantity;
+
+                for (const inventoryDoc of inventoryDocs) {
+                    if (remaining <= 0) break;
+                    const deductQty = Math.min(inventoryDoc.reserved, remaining);
+                    if (deductQty > 0) {
+                        await Inventory.findByIdAndUpdate(
+                            inventoryDoc._id,
+                            { $inc: { quantity: -deductQty, reserved: -deductQty } },
+                            { new: true }
+                        );
+                        remaining -= deductQty;
+                    }
+                }
+            }
+        }
+
+        // When order is cancelled, release reserved stock
+        if (nextStatus === 'cancelled' && previousStatus !== 'cancelled') {
+            for (const item of order.items) {
+                const inventoryDocs = await Inventory.find({ productId: item.productId });
+                let remaining = item.quantity;
+
+                for (const inventoryDoc of inventoryDocs) {
+                    if (remaining <= 0) break;
+                    const releaseQty = Math.min(inventoryDoc.reserved, remaining);
+                    if (releaseQty > 0) {
+                        await Inventory.findByIdAndUpdate(
+                            inventoryDoc._id,
+                            { $inc: { reserved: -releaseQty } },
+                            { new: true }
+                        );
+                        remaining -= releaseQty;
+                    }
+                }
+            }
+        }
+
+        // When order is returned, add stock back
+        if (nextStatus === 'returned' && previousStatus !== 'returned') {
+            for (const item of order.items) {
+                const inventoryDocs = await Inventory.find({ productId: item.productId });
+                let remaining = item.quantity;
+
+                for (const inventoryDoc of inventoryDocs) {
+                    if (remaining <= 0) break;
+                    const addBackQty = Math.min(inventoryDoc.reserved, remaining);
+                    if (addBackQty > 0) {
+                        await Inventory.findByIdAndUpdate(
+                            inventoryDoc._id,
+                            { $inc: { quantity: addBackQty, reserved: -addBackQty } },
+                            { new: true }
+                        );
+                        remaining -= addBackQty;
+                    }
+                }
+            }
+        }
+
+        const updatedOrder = await Order.findByIdAndUpdate(
+            req.params.id,
+            {
+                status: nextStatus,
+                $push: {
+                    statusHistory: {
+                        status: nextStatus,
+                        updatedAt: new Date(),
+                        updatedBy: req.authUser._id,
+                        note: String(req.body?.note || '').trim()
+                    }
+                }
+            },
+            { new: true, runValidators: true }
+        ).populate('user', 'name email role');
+
+        return res.json({ order: updatedOrder });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
@@ -465,15 +741,109 @@ app.post('/api/orders', requireAuth, async (req, res) => {
             return res.status(400).json({ message: 'Order items are invalid' });
         }
 
-        const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        await syncInventoryFromVariants();
+
+        const lookup = await buildLineItemLookup();
+        const resolvedItems = [];
+        const requiredByProductId = new Map();
+
+        for (const item of items) {
+            const resolved = resolveOrderItemProduct(item, lookup);
+            if (!resolved) {
+                return res.status(400).json({ message: `Cannot resolve inventory item: ${item.name}` });
+            }
+
+            const productIdKey = String(resolved.productId);
+            requiredByProductId.set(productIdKey, Number(requiredByProductId.get(productIdKey) || 0) + Number(item.quantity || 0));
+
+            resolvedItems.push({
+                ...item,
+                productId: resolved.productId,
+                lineType: resolved.lineType,
+                lineName: resolved.lineName
+            });
+        }
+
+        const inventoryDocs = await Inventory.find({
+            productId: { $in: Array.from(requiredByProductId.keys()) }
+        }).sort({ quantity: -1, createdAt: 1 });
+
+        const inventoryByProductId = new Map();
+        inventoryDocs.forEach((doc) => {
+            const key = String(doc.productId);
+            if (!inventoryByProductId.has(key)) {
+                inventoryByProductId.set(key, []);
+            }
+            inventoryByProductId.get(key).push(doc);
+        });
+
+        const stockDeductions = [];
+        for (const [productIdKey, requiredQty] of requiredByProductId.entries()) {
+            const docs = inventoryByProductId.get(productIdKey) || [];
+            const totalAvailable = docs.reduce((sum, doc) => sum + Math.max(0, Number(doc.quantity || 0) - Number(doc.reserved || 0)), 0);
+
+            if (totalAvailable < requiredQty) {
+                const fallbackName = resolvedItems.find((item) => String(item.productId) === productIdKey)?.name || productIdKey;
+                return res.status(400).json({ message: `Not enough stock for ${fallbackName}. Available: ${totalAvailable}, required: ${requiredQty}` });
+            }
+
+            let remaining = requiredQty;
+            for (const doc of docs) {
+                if (remaining <= 0) {
+                    break;
+                }
+
+                const available = Math.max(0, Number(doc.quantity || 0) - Number(doc.reserved || 0));
+                if (available <= 0) {
+                    continue;
+                }
+
+                const deductQty = Math.min(available, remaining);
+                stockDeductions.push({ inventoryId: doc._id, quantity: deductQty });
+                remaining -= deductQty;
+            }
+        }
+
+        if (stockDeductions.length > 0) {
+            await Inventory.bulkWrite(
+                stockDeductions.map((entry) => ({
+                    updateOne: {
+                        filter: { _id: entry.inventoryId },
+                        update: { $inc: { reserved: entry.quantity } }
+                    }
+                })),
+                { ordered: true }
+            );
+        }
+
+        const subtotal = resolvedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+        let shippingFee = calculateShippingFee(shippingAddress.city || shippingAddress.province);
+        let discount = 0;
+        const voucherCode = String(req.body?.voucherCode || '').trim();
+
+        if (voucherCode) {
+            const voucherResult = applyVoucher(voucherCode, subtotal, shippingFee);
+            if (!voucherResult.error) {
+                discount = voucherResult.discount;
+                shippingFee = voucherResult.shippingFee;
+            }
+        }
+
+        const total = Math.max(0, subtotal + shippingFee - discount);
 
         const order = await Order.create({
             user: req.authUser._id,
-            items,
+            items: resolvedItems,
             subtotal,
+            shippingFee,
+            discount,
+            voucherCode,
+            total,
             shippingAddress,
             payment,
-            currencySymbol: req.body?.currencySymbol || '$'
+            currencySymbol: req.body?.currencySymbol || '$',
+            statusHistory: [{ status: 'pending', updatedAt: new Date(), note: 'Đơn hàng đã được tạo' }]
         });
 
         return res.status(201).json({ order });
@@ -534,6 +904,15 @@ app.get('/api/poison-maeliths', async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: err.message });
     }   
+});
+
+app.get('/api/break-jump-lines', async (req, res) => {
+    try {
+        const breakJumpLines = await BreakJumpLine.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        res.json(breakJumpLines);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
 });
 
 app.get('/api/limited-editions', async (req, res) => {
@@ -598,151 +977,157 @@ app.get('/api/accessory-categories', async (req, res) => {
     }
 });
 
-// ====================== PHASE 1: PRODUCT VARIANTS & INVENTORY ======================
-
-// ProductVariant APIs
-app.get('/api/admin/products/:productId/variants', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/shaft-lines', async (req, res) => {
     try {
-        const variants = await ProductVariant.find({ productId: req.params.productId }).sort({ createdAt: -1 });
-        return res.json({ variants });
+        const shaftLines = await ShaftLine.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        res.json(shaftLines);
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        res.status(500).json({ message: err.message });
     }
 });
 
-app.post('/api/admin/products/:productId/variants', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/case-lines', async (req, res) => {
     try {
-        const product = await Product.findById(req.params.productId);
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found' });
-        }
-
-        const payload = {
-            productId: req.params.productId,
-            sku: String(req.body?.sku || '').trim(),
-            shaft: String(req.body?.shaft || '').trim(),
-            joint: String(req.body?.joint || '').trim(),
-            weight: String(req.body?.weight || '').trim(),
-            wrap: String(req.body?.wrap || '').trim(),
-            priceAdjustment: Number(req.body?.priceAdjustment || 0)
-        };
-
-        if (!payload.sku || !payload.shaft || !payload.joint || !payload.weight || !payload.wrap) {
-            return res.status(400).json({ message: 'SKU, shaft, joint, weight and wrap are required' });
-        }
-
-        const existingSku = await ProductVariant.findOne({ sku: payload.sku });
-        if (existingSku) {
-            return res.status(409).json({ message: 'SKU already exists' });
-        }
-
-        const variant = await ProductVariant.create(payload);
-        // Create inventory record for this variant
-        await Inventory.create({ variantId: variant._id, productId: req.params.productId, quantity: 0 });
-
-        return res.status(201).json({ variant });
+        const caseLines = await CaseLine.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        res.json(caseLines);
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        res.status(500).json({ message: err.message });
     }
 });
 
-app.put('/api/admin/variants/:variantId', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/accessory-lines', async (req, res) => {
     try {
-        const updates = {};
-        const allowedFields = ['sku', 'shaft', 'joint', 'weight', 'wrap', 'priceAdjustment', 'status'];
+        const accessoryLines = await AccessoryLine.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        res.json(accessoryLines);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
-        allowedFields.forEach(field => {
-            if (req.body[field] !== undefined) {
-                updates[field] = req.body[field];
-            }
+app.get('/api/table-lines', async (req, res) => {
+    try {
+        const tableLines = await TableLine.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        res.json(tableLines);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// ====================== VOUCHER & SHIPPING API ======================
+
+app.post('/api/voucher/validate', async (req, res) => {
+    try {
+        const code = String(req.body?.code || '').toUpperCase().trim();
+        const subtotal = Number(req.body?.subtotal || 0);
+        const city = String(req.body?.city || '').trim();
+
+        const shippingFee = calculateShippingFee(city);
+        const voucher = VOUCHER_CODES[code];
+
+        if (!voucher) {
+            return res.status(400).json({ valid: false, message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn' });
+        }
+
+        const result = applyVoucher(code, subtotal, shippingFee);
+        return res.json({
+            valid: true,
+            code,
+            description: voucher.description,
+            discount: result.discount,
+            shippingFee: result.shippingFee
         });
-
-        if (updates.sku) {
-            const existingSku = await ProductVariant.findOne({ sku: updates.sku, _id: { $ne: req.params.variantId } });
-            if (existingSku) {
-                return res.status(409).json({ message: 'SKU already exists' });
-            }
-        }
-
-        const variant = await ProductVariant.findByIdAndUpdate(req.params.variantId, updates, { new: true, runValidators: true });
-        if (!variant) {
-            return res.status(404).json({ message: 'Variant not found' });
-        }
-
-        return res.json({ variant });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
 });
 
-app.delete('/api/admin/variants/:variantId', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/shipping/calculate', async (req, res) => {
     try {
-        const variant = await ProductVariant.findByIdAndDelete(req.params.variantId);
-        if (!variant) {
-            return res.status(404).json({ message: 'Variant not found' });
-        }
-
-        // Delete associated inventory
-        await Inventory.deleteOne({ variantId: req.params.variantId });
-        return res.json({ message: 'Variant deleted' });
+        const city = String(req.body?.city || '').trim();
+        const shippingFee = calculateShippingFee(city);
+        return res.json({ shippingFee, currency: '₫' });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
 });
 
-// Inventory APIs
-app.get('/api/admin/inventory', requireAuth, requireAdmin, async (req, res) => {
+// ====================== CROSS-SELLING API ======================
+
+app.get('/api/cross-sell', async (req, res) => {
     try {
-        const inventory = await Inventory.find({})
-            .populate('variantId', 'sku shaft joint weight wrap')
-            .populate('productId', 'name')
-            .sort({ quantity: 1 });
-        return res.json({ inventory });
+        const category = String(req.query?.category || '').trim().toLowerCase();
+        const excludeId = String(req.query?.excludeId || '').trim();
+        const limit = Math.min(Number(req.query?.limit) || 6, 12);
+
+        let suggestions = [];
+
+        if (category === 'cue' || category === 'cues' || !category) {
+            const [accessories, cases, shafts] = await Promise.all([
+                AccessoryLine.find({ isActive: true }).sort({ order: 1 }).limit(3).lean(),
+                CaseLine.find({ isActive: true }).sort({ order: 1 }).limit(2).lean(),
+                ShaftLine.find({ isActive: true }).sort({ order: 1 }).limit(2).lean()
+            ]);
+            suggestions = [
+                ...accessories.map(item => ({ ...item, suggestCategory: 'Accessories' })),
+                ...cases.map(item => ({ ...item, suggestCategory: 'Cases' })),
+                ...shafts.map(item => ({ ...item, suggestCategory: 'Shafts' }))
+            ];
+        } else if (category === 'shaft' || category === 'shafts') {
+            const [accessories, cues] = await Promise.all([
+                AccessoryLine.find({ isActive: true }).sort({ order: 1 }).limit(3).lean(),
+                BreakJumpLine.find({ isActive: true }).sort({ order: 1 }).limit(2).lean()
+            ]);
+            suggestions = [
+                ...accessories.map(item => ({ ...item, suggestCategory: 'Accessories' })),
+                ...cues.map(item => ({ ...item, suggestCategory: 'Cues' }))
+            ];
+        } else {
+            const [accessories, cases] = await Promise.all([
+                AccessoryLine.find({ isActive: true }).sort({ order: 1 }).limit(4).lean(),
+                CaseLine.find({ isActive: true }).sort({ order: 1 }).limit(3).lean()
+            ]);
+            suggestions = [
+                ...accessories.map(item => ({ ...item, suggestCategory: 'Accessories' })),
+                ...cases.map(item => ({ ...item, suggestCategory: 'Cases' }))
+            ];
+        }
+
+        if (excludeId) {
+            suggestions = suggestions.filter(item => String(item._id) !== excludeId);
+        }
+
+        return res.json({ suggestions: suggestions.slice(0, limit) });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
 });
 
-app.get('/api/admin/inventory/warnings', requireAuth, requireAdmin, async (req, res) => {
+// Order history for customers
+app.get('/api/orders/:orderId/history', requireAuth, async (req, res) => {
     try {
-        const lowStockItems = await Inventory.find({ $expr: { $lt: ['$quantity', '$reorderLevel'] } })
-            .populate('variantId', 'sku shaft joint weight wrap priceAdjustment')
-            .populate('productId', 'name price')
-            .sort({ quantity: 1 });
-        return res.json({ warnings: lowStockItems });
+        const order = await Order.findOne({ _id: req.params.orderId, user: req.authUser._id })
+            .select('statusHistory status createdAt');
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+        return res.json({ statusHistory: order.statusHistory || [], currentStatus: order.status });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
 });
 
-app.put('/api/admin/inventory/:variantId', requireAuth, requireAdmin, async (req, res) => {
-    try {
-        const updates = {};
-        if (typeof req.body?.quantity !== 'undefined') {
-            updates.quantity = Math.max(0, Number(req.body.quantity || 0));
-        }
-        if (typeof req.body?.reorderLevel !== 'undefined') {
-            updates.reorderLevel = Number(req.body.reorderLevel || 5);
-        }
-        if (typeof req.body?.location !== 'undefined') {
-            updates.location = String(req.body.location || '').trim();
-        }
-
-        const inventory = await Inventory.findByIdAndUpdate(
-            req.body?.inventoryId || req.params.variantId,
-            updates,
-            { new: true }
-        ).populate('variantId', 'sku').populate('productId', 'name');
-
-        if (!inventory) {
-            return res.status(404).json({ message: 'Inventory not found' });
-        }
-
-        return res.json({ inventory });
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
-    }
-});
+// ====================== PHASE 1: PRODUCT VARIANTS & INVENTORY ======================
+app.use('/api/admin', createAdminVariantInventoryRouter({
+    requireAuth,
+    requireAdmin,
+    ProductVariant,
+    Inventory,
+    ADMIN_LINE_MODELS,
+    normalizeLineType,
+    findLineItemById,
+    syncInventoryFromVariants,
+    buildDefaultVariantSku
+}));
 
 // ====================== PHASE 2: ORDER FULFILLMENT & TRACKING ======================
 
@@ -762,7 +1147,7 @@ app.get('/api/admin/orders/:orderId/history', requireAuth, requireAdmin, async (
 app.put('/api/admin/orders/:orderId', requireAuth, requireAdmin, async (req, res) => {
     try {
         const statusChange = String(req.body?.status || '').trim();
-        const allowedStatuses = ['pending', 'processing', 'packing', 'shipped', 'in-transit', 'delivered', 'cancelled', 'returned'];
+        const allowedStatuses = ORDER_WORKFLOW_STATUSES;
 
         if (!allowedStatuses.includes(statusChange)) {
             return res.status(400).json({ message: 'Invalid order status' });
@@ -875,6 +1260,77 @@ app.get('/api/admin/analytics/top-products', requireAuth, requireAdmin, async (r
             .slice(0, 10);
 
         return res.json({ topProducts });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+app.get('/api/admin/analytics/kpis', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const todayOrders = await Order.find({
+            createdAt: { $gte: todayStart },
+            status: { $nin: ['cancelled', 'returned'] }
+        });
+
+        const todayRevenue = todayOrders.reduce((sum, order) => sum + Number(order.subtotal || 0), 0);
+
+        const pendingOrderCount = await Order.countDocuments({
+            status: { $in: ['pending', 'paid'] }
+        });
+
+        const monthOrders = await Order.find({
+            createdAt: { $gte: monthStart },
+            status: { $nin: ['cancelled', 'returned'] }
+        });
+
+        const monthlySales = {};
+        monthOrders.forEach((order) => {
+            order.items.forEach((item) => {
+                monthlySales[item.itemId] = {
+                    name: item.name,
+                    quantity: (monthlySales[item.itemId]?.quantity || 0) + Number(item.quantity || 0),
+                    revenue: (monthlySales[item.itemId]?.revenue || 0) + Number(item.price || 0) * Number(item.quantity || 0)
+                };
+            });
+        });
+
+        const topProduct = Object.values(monthlySales).sort((a, b) => b.quantity - a.quantity)[0] || null;
+
+        const weeklyStart = new Date(todayStart);
+        weeklyStart.setDate(todayStart.getDate() - 6);
+
+        const weeklyOrders = await Order.find({
+            createdAt: { $gte: weeklyStart },
+            status: { $nin: ['cancelled', 'returned'] }
+        }).sort({ createdAt: 1 });
+
+        const weeklyRevenueMap = {};
+        for (let i = 0; i < 7; i += 1) {
+            const dateObj = new Date(weeklyStart);
+            dateObj.setDate(weeklyStart.getDate() + i);
+            const key = dateObj.toISOString().split('T')[0];
+            weeklyRevenueMap[key] = 0;
+        }
+
+        weeklyOrders.forEach((order) => {
+            const key = order.createdAt.toISOString().split('T')[0];
+            if (weeklyRevenueMap[key] !== undefined) {
+                weeklyRevenueMap[key] += Number(order.subtotal || 0);
+            }
+        });
+
+        const weeklyRevenue = Object.entries(weeklyRevenueMap).map(([date, revenue]) => ({ date, revenue }));
+
+        return res.json({
+            todayRevenue,
+            pendingOrderCount,
+            topProduct,
+            weeklyRevenue
+        });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }

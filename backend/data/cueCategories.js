@@ -13,18 +13,6 @@ const cueCategories = [
     isActive: true
   },
   {
-    categoryName: 'Pool Cues By Type',
-    items: [
-      { name: 'Carbon Fiber Pool Cues', badge: null },
-      { name: 'Modern Pool Cues', badge: null },
-      { name: 'Radial® Joint Pool Cues', badge: null },
-      { name: '59 and 60-inch Long Pool Cues', badge: null },
-      { name: 'C4+ Technology Cues', badge: null }
-    ],
-    order: 2,
-    isActive: true
-  },
-  {
     categoryName: 'Break & Jump Cues',
     items: [
       { name: 'View All Break and Jump Cues', badge: null },
@@ -35,7 +23,7 @@ const cueCategories = [
       { name: 'AIR RUSH Jump Cues', badge: 'NEW' },
       { name: 'AIR II Jump Cues', badge: null }
     ],
-    order: 3,
+    order: 2,
     isActive: true
   }
 ];

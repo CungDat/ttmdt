@@ -6,10 +6,18 @@ function MegaMenu({
   navItems,
   getCategoriesByType,
   getMenuSeriesKey,
-  openLineSeriesPage
+  openLineSeriesPage,
+  openLineDetailPage,
+  resolveMenuLineItem
 }) {
   const activeType = navItems.find((item) => item.label === activeMenu)?.type;
   const activeCategories = getCategoriesByType(activeType);
+  const fallbackSeriesByType = {
+    shafts: 'shafts',
+    cases: 'cases',
+    accessories: 'accessories',
+    tables: 'tables'
+  };
 
   return (
     <div
@@ -24,19 +32,20 @@ function MegaMenu({
               <ul className="mega-cues-list">
                 {category.items.map((item) => {
                   const menuSeriesKey = getMenuSeriesKey(item.name);
+                  const resolvedSeriesKey = menuSeriesKey || fallbackSeriesByType[activeType] || null;
 
                   return (
                     <li key={item.name}>
                       <a
-                        href={menuSeriesKey ? `/line/${menuSeriesKey}` : '/'}
+                        href={resolvedSeriesKey ? `/line/${resolvedSeriesKey}` : '/'}
                         className="mega-cues-link"
                         onClick={(event) => {
-                          if (!menuSeriesKey) {
+                          if (!resolvedSeriesKey) {
                             return;
                           }
 
                           event.preventDefault();
-                          openLineSeriesPage(menuSeriesKey);
+                          openLineSeriesPage(resolvedSeriesKey);
                         }}
                       >
                         {item.name}
