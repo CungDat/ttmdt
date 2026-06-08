@@ -1,0 +1,21 @@
+# Thư viện (cực kỳ quan trọng)
+node_modules/
+
+# File môi trường (chứa mật khẩu/API key)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Hệ điều hành
+.DS_Store
+Thumbs.db
+
+# Build và logs
+dist/
+build/
+*.log
+
+# Dữ liệu tạm thời
+scratch/
