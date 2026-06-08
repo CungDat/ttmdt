@@ -1,9 +1,4 @@
-/**
- * Advanced Search & Filter API
- * Tìm kiếm nâng cao theo tên, dòng cơ (shaft), loại ren, giá, tồn kho, phiên bản giới hạn
- */
 const express = require('express');
-
 const createSearchRouter = ({ ADMIN_LINE_MODELS, Inventory, ProductVariant }) => {
   const router = express.Router();
 
@@ -147,10 +142,10 @@ const createSearchRouter = ({ ADMIN_LINE_MODELS, Inventory, ProductVariant }) =>
           filtered.sort((a, b) => b.price - a.price);
           break;
         case 'name-asc':
-          filtered.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+          filtered.sort((a, b) => a.name.localeCompare(b.name, 'en'));
           break;
         case 'name-desc':
-          filtered.sort((a, b) => b.name.localeCompare(a.name, 'vi'));
+          filtered.sort((a, b) => b.name.localeCompare(a.name, 'en'));
           break;
         case 'relevance':
         default:

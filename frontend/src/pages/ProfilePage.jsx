@@ -43,12 +43,12 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
 
       if (showPasswordForm && currentPassword && newPassword) {
         if (newPassword !== confirmPassword) {
-          setErrorMessage('Mật khẩu mới không khớp');
+          setErrorMessage('New passwords do not match');
           setIsSubmitting(false);
           return;
         }
         if (newPassword.length < 6) {
-          setErrorMessage('Mật khẩu mới phải có ít nhất 6 ký tự');
+          setErrorMessage('New password must be at least 6 characters');
           setIsSubmitting(false);
           return;
         }
@@ -62,14 +62,14 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
 
       if (res.data?.user) {
         onUserUpdate?.(res.data.user);
-        setSuccessMessage('Cập nhật thông tin thành công!');
+        setSuccessMessage('Profile updated successfully!');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
         setShowPasswordForm(false);
       }
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || 'Cập nhật thất bại. Vui lòng thử lại.');
+      setErrorMessage(err.response?.data?.message || 'Update failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -81,8 +81,8 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
         <main className="profile-page-main">
           <div className="profile-not-logged">
             <User size={48} />
-            <h2>Vui lòng đăng nhập</h2>
-            <p>Bạn cần đăng nhập để xem và chỉnh sửa thông tin cá nhân.</p>
+            <h2>Please log in</h2>
+            <p>You need to log in to view and edit your profile.</p>
           </div>
         </main>
         <Footer />
@@ -97,15 +97,15 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
           <div className="profile-page-header">
             <button type="button" className="profile-back-btn" onClick={onBack}>
               <ArrowLeft size={18} />
-              Quay lại
+              Back
             </button>
             <h1 className="profile-page-title">
               <User size={24} />
-              Thông tin cá nhân
+              Profile Info
             </h1>
             <div className="profile-role-badge">
               <ShieldCheck size={14} />
-              {currentUser.role === 'admin' ? 'Quản trị viên' : 'Khách hàng'}
+              {currentUser.role === 'admin' ? 'Administrator' : 'Customer'}
             </div>
           </div>
 
@@ -118,18 +118,18 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
 
           <form className="profile-form" onSubmit={handleSaveProfile}>
             <div className="profile-form-section">
-              <h3 className="profile-section-title">Thông tin cơ bản</h3>
+              <h3 className="profile-section-title">Basic Information</h3>
               <div className="profile-field-grid">
                 <label className="profile-field">
                   <span className="profile-field-label">
-                    <User size={14} /> Họ và tên
+                    <User size={14} /> Full Name
                   </span>
                   <input
                     type="text"
                     className="profile-input"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Nguyễn Văn A"
+                    placeholder="John Doe"
                   />
                 </label>
                 <label className="profile-field">
@@ -146,7 +146,7 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
                 </label>
                 <label className="profile-field">
                   <span className="profile-field-label">
-                    <Phone size={14} /> Số điện thoại
+                    <Phone size={14} /> Phone Number
                   </span>
                   <input
                     type="tel"
@@ -158,14 +158,14 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
                 </label>
                 <label className="profile-field profile-field-full">
                   <span className="profile-field-label">
-                    <MapPin size={14} /> Địa chỉ
+                    <MapPin size={14} /> Address
                   </span>
                   <input
                     type="text"
                     className="profile-input"
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    placeholder="123 Nguyễn Trãi, Quận 1, TP.HCM"
+                    placeholder="123 Main St, New York, NY"
                   />
                 </label>
               </div>
@@ -174,21 +174,21 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
             <div className="profile-form-section">
               <div className="profile-section-header">
                 <h3 className="profile-section-title">
-                  <Lock size={16} /> Đổi mật khẩu
+                  <Lock size={16} /> Change Password
                 </h3>
                 <button
                   type="button"
                   className="profile-toggle-password-btn"
                   onClick={() => setShowPasswordForm(!showPasswordForm)}
                 >
-                  {showPasswordForm ? 'Ẩn' : 'Đổi mật khẩu'}
+                  {showPasswordForm ? 'Hide' : 'Change Password'}
                 </button>
               </div>
 
               {showPasswordForm && (
                 <div className="profile-field-grid">
                   <label className="profile-field">
-                    <span className="profile-field-label">Mật khẩu hiện tại</span>
+                    <span className="profile-field-label">Current Password</span>
                     <input
                       type="password"
                       className="profile-input"
@@ -198,7 +198,7 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
                     />
                   </label>
                   <label className="profile-field">
-                    <span className="profile-field-label">Mật khẩu mới</span>
+                    <span className="profile-field-label">New Password</span>
                     <input
                       type="password"
                       className="profile-input"
@@ -208,7 +208,7 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
                     />
                   </label>
                   <label className="profile-field">
-                    <span className="profile-field-label">Xác nhận mật khẩu mới</span>
+                    <span className="profile-field-label">Confirm New Password</span>
                     <input
                       type="password"
                       className="profile-input"
@@ -228,7 +228,7 @@ function ProfilePage({ currentUser, authToken, onUserUpdate, onBack }) {
                 disabled={isSubmitting}
               >
                 <Save size={16} />
-                {isSubmitting ? 'Đang lưu...' : 'Lưu thay đổi'}
+                {isSubmitting ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </form>

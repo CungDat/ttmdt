@@ -13,11 +13,11 @@ const LINE_TYPE_LABELS = {
 };
 
 const SORT_OPTIONS = [
-  { value: 'relevance', label: 'Phù hợp nhất' },
-  { value: 'price-asc', label: 'Giá: Thấp → Cao' },
-  { value: 'price-desc', label: 'Giá: Cao → Thấp' },
-  { value: 'name-asc', label: 'Tên: A → Z' },
-  { value: 'name-desc', label: 'Tên: Z → A' }
+  { value: 'relevance', label: 'Best Match' },
+  { value: 'price-asc', label: 'Price: Low to High' },
+  { value: 'price-desc', label: 'Price: High to Low' },
+  { value: 'name-asc', label: 'Name: A to Z' },
+  { value: 'name-desc', label: 'Name: Z to A' }
 ];
 
 function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
@@ -113,10 +113,10 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
         <div className="search-page-header">
           <h1 className="search-page-title">
             <Search size={28} />
-            Tìm kiếm sản phẩm
+            Search Products
           </h1>
           <p className="search-page-subtitle">
-            Tìm kiếm theo tên, dòng cơ, loại ren, hoặc lọc theo giá và tình trạng hàng
+            Search by name, cue line, thread type, or filter by price and availability
           </p>
         </div>
 
@@ -129,7 +129,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
               className="search-page-input"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm theo tên sản phẩm, dòng cơ..."
+              placeholder="Search by product name, cue line..."
               autoFocus
             />
             {query && (
@@ -139,7 +139,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
             )}
           </div>
           <button type="submit" className="search-page-submit-btn">
-            Tìm kiếm
+            Search
           </button>
         </form>
 
@@ -152,7 +152,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
               onClick={() => setFiltersOpen((prev) => !prev)}
             >
               <SlidersHorizontal size={16} />
-              Bộ lọc {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
+              Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}
               {filtersOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
 
@@ -160,38 +160,38 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
               <div className="search-filter-body">
                 {/* Shaft filter */}
                 <div className="search-filter-group">
-                  <label className="search-filter-label">Dòng cơ (Shaft)</label>
+                  <label className="search-filter-label">Cue Line (Shaft)</label>
                   <input
                     type="text"
                     className="search-filter-input"
                     value={shaft}
                     onChange={(e) => setShaft(e.target.value)}
-                    placeholder="VD: REVO, 314, Z-3..."
+                    placeholder="e.g., REVO, 314, Z-3..."
                   />
                 </div>
 
                 {/* Thread filter */}
                 <div className="search-filter-group">
-                  <label className="search-filter-label">Loại ren (Joint/Thread)</label>
+                  <label className="search-filter-label">Joint/Thread Type</label>
                   <input
                     type="text"
                     className="search-filter-input"
                     value={thread}
                     onChange={(e) => setThread(e.target.value)}
-                    placeholder="VD: Uni-Loc, 3/8x10..."
+                    placeholder="e.g., Uni-Loc, 3/8x10..."
                   />
                 </div>
 
                 {/* Price range */}
                 <div className="search-filter-group">
-                  <label className="search-filter-label">Khoảng giá ($)</label>
+                  <label className="search-filter-label">Price Range ($)</label>
                   <div className="search-filter-price-row">
                     <input
                       type="number"
                       className="search-filter-input search-filter-price-input"
                       value={minPrice}
                       onChange={(e) => setMinPrice(e.target.value)}
-                      placeholder="Từ"
+                      placeholder="Min"
                       min="0"
                     />
                     <span className="search-filter-price-sep">—</span>
@@ -200,7 +200,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                       className="search-filter-input search-filter-price-input"
                       value={maxPrice}
                       onChange={(e) => setMaxPrice(e.target.value)}
-                      placeholder="Đến"
+                      placeholder="Max"
                       min="0"
                     />
                   </div>
@@ -208,13 +208,13 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
 
                 {/* Line type */}
                 <div className="search-filter-group">
-                  <label className="search-filter-label">Loại sản phẩm</label>
+                  <label className="search-filter-label">Product Type</label>
                   <select
                     className="search-filter-select"
                     value={lineType}
                     onChange={(e) => setLineType(e.target.value)}
                   >
-                    <option value="">Tất cả</option>
+                    <option value="">All</option>
                     {filterMeta.availableLineTypes.map((lt) => (
                       <option key={lt.value} value={lt.value}>{lt.label}</option>
                     ))}
@@ -230,7 +230,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                       onChange={(e) => setInStockOnly(e.target.checked)}
                     />
                     <Package size={14} />
-                    Chỉ hiện còn hàng
+                    In Stock Only
                   </label>
                 </div>
 
@@ -242,13 +242,13 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                       onChange={(e) => setLimitedOnly(e.target.checked)}
                     />
                     <Tag size={14} />
-                    Phiên bản giới hạn
+                    Limited Edition
                   </label>
                 </div>
 
                 {/* Sort */}
                 <div className="search-filter-group">
-                  <label className="search-filter-label">Sắp xếp</label>
+                  <label className="search-filter-label">Sort By</label>
                   <select
                     className="search-filter-select"
                     value={sortBy}
@@ -266,14 +266,14 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                     className="search-filter-apply-btn"
                     onClick={() => fetchResults(1)}
                   >
-                    Áp dụng bộ lọc
+                    Apply Filters
                   </button>
                   <button
                     type="button"
                     className="search-filter-clear-btn"
                     onClick={handleClearFilters}
                   >
-                    Xóa bộ lọc
+                    Clear Filters
                   </button>
                 </div>
               </div>
@@ -285,23 +285,23 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
             {isLoading && (
               <div className="search-results-loading">
                 <Loader2 className="search-loading-spinner" size={32} />
-                <p>Đang tìm kiếm...</p>
+                <p>Searching...</p>
               </div>
             )}
 
             {!isLoading && hasSearched && results.length === 0 && (
               <div className="search-results-empty">
                 <Search size={48} className="search-results-empty-icon" />
-                <h3>Không tìm thấy sản phẩm</h3>
-                <p>Thử thay đổi từ khóa hoặc bộ lọc để tìm sản phẩm phù hợp.</p>
+                <h3>No products found</h3>
+                <p>Try changing keywords or filters to find matching products.</p>
               </div>
             )}
 
             {!isLoading && hasSearched && results.length > 0 && (
               <>
                 <div className="search-results-info">
-                  <span>Tìm thấy <strong>{totalResults}</strong> sản phẩm</span>
-                  <span className="search-results-page-info">Trang {page}/{totalPages}</span>
+                  <span>Found <strong>{totalResults}</strong> products</span>
+                  <span className="search-results-page-info">Page {page}/{totalPages}</span>
                 </div>
 
                 <div className="search-results-grid">
@@ -338,7 +338,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                               }
                             }}
                           >
-                            Xem chi tiết
+                            View Details
                           </button>
                           <button
                             type="button"
@@ -354,7 +354,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                               }
                             }}
                           >
-                            + Thêm vào giỏ
+                            + Add to Cart
                           </button>
                         </div>
                       </div>
@@ -371,7 +371,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                       disabled={page <= 1}
                       onClick={() => handlePageChange(page - 1)}
                     >
-                      ← Trước
+                      ← Prev
                     </button>
                     {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
                       let pageNum;
@@ -401,7 +401,7 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
                       disabled={page >= totalPages}
                       onClick={() => handlePageChange(page + 1)}
                     >
-                      Sau →
+                      Next →
                     </button>
                   </div>
                 )}
@@ -411,8 +411,8 @@ function SearchPage({ onAddToCart, isAuthenticated, onOpenLineDetailPage }) {
             {!isLoading && !hasSearched && (
               <div className="search-results-empty search-results-initial">
                 <Filter size={48} className="search-results-empty-icon" />
-                <h3>Bắt đầu tìm kiếm</h3>
-                <p>Nhập từ khóa hoặc sử dụng bộ lọc bên trái để tìm sản phẩm Predator phù hợp.</p>
+                <h3>Start Searching</h3>
+                <p>Enter keywords or use the filters on the left to find Predator products.</p>
               </div>
             )}
           </section>

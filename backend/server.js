@@ -7,8 +7,8 @@ const jwt = require('jsonwebtoken');
 
 dotenv.config();
 
-mongoose.connect(process.env.MONGO_URL).then(() => console.log("Ket noi voi db thanh cong"))
-.catch((err) => console.log("loi ket noi:",err));
+mongoose.connect(process.env.MONGO_URL).then(() => console.log("Database connected successfully"))
+.catch((err) => console.log("Connection error:",err));
 
 const app = express();
 app.use(cors());
@@ -39,6 +39,10 @@ const createAdminVariantInventoryRouter = require('./routes/adminVariantInventor
 const createPaymentRouter = require('./routes/paymentRoutes');
 const createSearchRouter = require('./routes/searchRoutes');
 const createUploadRouter = require('./routes/uploadRoutes');
+const createVoucherRouter = require('./routes/voucherRoutes');
+const Voucher = require('./models/Voucher');
+const emailService = require('./services/emailService');
+const { startAutoCancelScheduler } = require('./services/autoCancelScheduler');
 
 const ADMIN_LINE_MODELS = {
     truesplice: { model: TrueSpliceLine, label: 'True Splice' },
@@ -46,7 +50,11 @@ const ADMIN_LINE_MODELS = {
     'poison-maelith': { model: PoisonMaelith, label: 'Poison Maelith' },
     'poison-candy': { model: PoisonCandy, label: 'Poison Candy' },
     'break-jump': { model: BreakJumpLine, label: 'Break & Jump' },
-    limited: { model: limitedEdition, label: 'Limited Edition' }
+    limited: { model: limitedEdition, label: 'Limited Edition' },
+    shaft: { model: ShaftLine, label: 'Shafts' },
+    'case': { model: CaseLine, label: 'Cases' },
+    accessory: { model: AccessoryLine, label: 'Accessories' },
+    table: { model: TableLine, label: 'Tables' }
 };
 
 const normalizeLineType = (value) => String(value || '').trim().toLowerCase();
@@ -71,38 +79,49 @@ const mapAdminLineItem = (item, lineType) => {
 
 const ORDER_WORKFLOW_STATUSES = ['pending', 'paid', 'packing', 'shipped', 'delivered', 'cancelled', 'returned'];
 
-const VOUCHER_CODES = {
-    'PREDATOR10': { type: 'percent', value: 10, description: 'Giảm 10%' },
-    'LABGIAM50K': { type: 'fixed', value: 50000, description: 'Giảm 50.000₫' },
-    'FREESHIP': { type: 'freeship', value: 0, description: 'Miễn phí vận chuyển' },
-    'WELCOME20': { type: 'percent', value: 20, description: 'Giảm 20% cho khách mới' }
-};
+// Legacy fallback vouchers (replaced by DB Voucher)
+const VOUCHER_CODES = {};
 
-const SHIPPING_SAME_CITY_FEE = 30000;
-const SHIPPING_DIFFERENT_CITY_FEE = 50000;
-const SELLER_CITY = 'Hồ Chí Minh';
+// Shipping zones: Inner HCM < $30, neighboring provinces < $50, others < $100
+const SHIPPING_ZONES = [
+    { keywords: ['hồ chí minh', 'ho chi minh', 'hcm', 'tp hcm', 'tp. hcm'], fee: 30, label: 'Inner HCM' },
+    { keywords: ['bình dương', 'đồng nai', 'long an', 'tây ninh', 'bà rịa', 'vũng tàu'], fee: 50, label: 'Neighboring Provinces' },
+    { keywords: ['đà nẵng', 'huế', 'quảng nam', 'quảng ngãi', 'bình định', 'khánh hòa', 'nha trang'], fee: 70, label: 'Central Region' },
+    { keywords: ['hà nội', 'hải phòng', 'hải dương', 'bắc ninh', 'hưng yên', 'vĩnh phúc', 'thái nguyên'], fee: 80, label: 'Northern Region' }
+];
+const SHIPPING_DEFAULT_FEE = 100;
 
 const calculateShippingFee = (city) => {
-    const normalizedCity = String(city || '').toLowerCase().replace(/[^a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+/g, ' ').trim();
-    const sellerNormalized = SELLER_CITY.toLowerCase().replace(/[^a-zàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]+/g, ' ').trim();
-    if (normalizedCity.includes(sellerNormalized) || sellerNormalized.includes(normalizedCity)) {
-        return SHIPPING_SAME_CITY_FEE;
+    const normalized = String(city || '').toLowerCase().trim();
+    for (const zone of SHIPPING_ZONES) {
+        if (zone.keywords.some(kw => normalized.includes(kw))) return zone.fee;
     }
-    return SHIPPING_DIFFERENT_CITY_FEE;
+    return SHIPPING_DEFAULT_FEE;
 };
 
+const getShippingZoneLabel = (city) => {
+    const normalized = String(city || '').toLowerCase().trim();
+    for (const zone of SHIPPING_ZONES) {
+        if (zone.keywords.some(kw => normalized.includes(kw))) return zone.label;
+    }
+    return 'National';
+};
+
+// DB-based voucher apply (used for COD/Bank checkout)
+const applyVoucherDB = async (code, subtotal, shippingFee, userId) => {
+    if (!code) return { discount: 0, shippingFee, error: null, voucher: null };
+    const voucher = await Voucher.findOne({ code: String(code).toUpperCase().trim() });
+    if (!voucher) return { discount: 0, shippingFee, error: 'Voucher code does not exist', voucher: null };
+    const validation = voucher.validateVoucher(userId, subtotal);
+    if (!validation.valid) return { discount: 0, shippingFee, error: validation.error, voucher: null };
+    const result = voucher.calculateDiscount(subtotal, shippingFee);
+    return { ...result, error: null, voucher };
+};
+
+// Legacy sync applyVoucher kept for payment routes compatibility
 const applyVoucher = (code, subtotal, shippingFee) => {
     const voucher = VOUCHER_CODES[String(code || '').toUpperCase().trim()];
-    if (!voucher) return { discount: 0, shippingFee, error: 'Mã giảm giá không hợp lệ' };
-    if (voucher.type === 'percent') {
-        return { discount: Math.round(subtotal * voucher.value / 100), shippingFee, error: null };
-    }
-    if (voucher.type === 'fixed') {
-        return { discount: Math.min(voucher.value, subtotal), shippingFee, error: null };
-    }
-    if (voucher.type === 'freeship') {
-        return { discount: 0, shippingFee: 0, error: null };
-    }
+    if (!voucher) return { discount: 0, shippingFee, error: 'Invalid voucher code' };
     return { discount: 0, shippingFee, error: null };
 };
 const LINE_TYPE_SKU_PREFIX = {
@@ -717,15 +736,118 @@ app.put('/api/admin/orders/:id/status', requireAuth, requireAdmin, async (req, r
             { new: true, runValidators: true }
         ).populate('user', 'name email role');
 
+        // Gửi email theo trạng thái mới
+        const customerEmail = updatedOrder?.user?.email;
+        if (customerEmail && updatedOrder) {
+            if (nextStatus === 'paid') {
+                emailService.sendPaymentConfirmation(updatedOrder, customerEmail).catch(() => {});
+            } else if (nextStatus === 'shipped') {
+                emailService.sendShippingNotification(updatedOrder, customerEmail).catch(() => {});
+            } else if (nextStatus === 'cancelled') {
+                emailService.sendOrderCancellation(updatedOrder, customerEmail, 'Đơn hàng đã được hủy bởi admin').catch(() => {});
+            }
+        }
+
         return res.json({ order: updatedOrder });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
 });
 
-app.post('/api/orders', requireAuth, async (req, res) => {
+// Admin: Update order tracking, notes, warehouse (non-status fields)
+app.put('/api/admin/orders/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        const updateFields = {};
+
+        // Update tracking info
+        if (req.body.tracking) {
+            updateFields['tracking.number'] = String(req.body.tracking.number || '').trim();
+            updateFields['tracking.carrier'] = String(req.body.tracking.carrier || '').trim();
+            updateFields['tracking.currentLocation'] = String(req.body.tracking.currentLocation || '').trim();
+        }
+
+        // Update notes
+        if (req.body.notes !== undefined) {
+            updateFields.notes = String(req.body.notes || '').trim();
+        }
+
+        // Update assigned warehouse
+        if (req.body.assignedWarehouse !== undefined) {
+            updateFields.assignedWarehouse = String(req.body.assignedWarehouse || 'Main Warehouse').trim();
+        }
+
+        // If status is also provided, handle it
+        if (req.body.status && req.body.status !== order.status) {
+            const nextStatus = String(req.body.status).trim();
+            if (ORDER_WORKFLOW_STATUSES.includes(nextStatus)) {
+                updateFields.status = nextStatus;
+                updateFields.$push = {
+                    statusHistory: {
+                        status: nextStatus,
+                        updatedAt: new Date(),
+                        updatedBy: req.authUser._id,
+                        note: String(req.body.statusNote || req.body.notes || '').trim()
+                    }
+                };
+            }
+        }
+
+        const updatedOrder = await Order.findByIdAndUpdate(
+            req.params.id,
+            updateFields,
+            { new: true, runValidators: true }
+        ).populate('user', 'name email role');
+
+        return res.json({ order: updatedOrder });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+// Middleware xác thực tùy chọn (cho Guest Checkout)
+const optionalAuth = async (req, res, next) => {
+    try {
+        const token = String(req.headers?.authorization || '').replace('Bearer ', '').trim();
+        if (token) {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+            const user = await User.findById(decoded.id).select('-passwordHash');
+            if (user) req.authUser = user;
+        }
+    } catch (_) { /* Guest mode */ }
+    return next();
+};
+
+app.post('/api/orders', optionalAuth, async (req, res) => {
     try {
         const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+        const guestEmail = String(req.body?.guestEmail || req.body?.shippingAddress?.email || '').trim().toLowerCase();
+
+        // Guest checkout: tạo tài khoản ẩn nếu chưa đăng nhập
+        let orderUser = req.authUser;
+        if (!orderUser) {
+            if (!guestEmail) {
+                return res.status(400).json({ message: 'Vui lòng nhập email để tiếp tục mua hàng' });
+            }
+            // Tìm hoặc tạo guest user theo email
+            let guestUser = await User.findOne({ email: guestEmail });
+            if (!guestUser) {
+                const guestName = String(req.body?.shippingAddress?.fullName || 'Guest').trim();
+                const tempPass = await bcrypt.hash(`guest_${Date.now()}`, 8);
+                guestUser = await User.create({
+                    name: guestName.replace(/\d/g, '').trim() || 'Guest',
+                    email: guestEmail,
+                    passwordHash: tempPass,
+                    phone: String(req.body?.shippingAddress?.phone || '').trim(),
+                    role: 'customer'
+                });
+            }
+            orderUser = guestUser;
+        }
         const shippingAddress = {
             fullName: String(req.body?.shippingAddress?.fullName || '').trim(),
             phone: String(req.body?.shippingAddress?.phone || '').trim(),
@@ -869,7 +991,7 @@ app.post('/api/orders', requireAuth, async (req, res) => {
         const voucherCode = String(req.body?.voucherCode || '').trim();
 
         if (voucherCode) {
-            const voucherResult = applyVoucher(voucherCode, subtotal, shippingFee);
+            const voucherResult = await applyVoucherDB(voucherCode, subtotal, shippingFee, orderUser?._id);
             if (!voucherResult.error) {
                 discount = voucherResult.discount;
                 shippingFee = voucherResult.shippingFee;
@@ -879,7 +1001,7 @@ app.post('/api/orders', requireAuth, async (req, res) => {
         const total = Math.max(0, subtotal + shippingFee - discount);
 
         const order = await Order.create({
-            user: req.authUser._id,
+            user: orderUser._id,
             items: resolvedItems,
             subtotal,
             shippingFee,
@@ -891,6 +1013,18 @@ app.post('/api/orders', requireAuth, async (req, res) => {
             currencySymbol: req.body?.currencySymbol || '$',
             statusHistory: [{ status: 'pending', updatedAt: new Date(), note: 'Đơn hàng đã được tạo' }]
         });
+
+        // Ghi nhận voucher đã dùng nếu có
+        if (voucherCode && discount > 0) {
+            const usedVoucher = await Voucher.findOne({ code: voucherCode.toUpperCase() });
+            if (usedVoucher) await usedVoucher.markUsed(orderUser?._id).catch(() => {});
+        }
+
+        // Gửi email xác nhận cho khách
+        const customerEmail = orderUser?.email || guestEmail;
+        if (customerEmail) {
+            emailService.sendOrderConfirmation(order, customerEmail).catch(() => {});
+        }
 
         return res.status(201).json({ order });
     } catch (err) {
@@ -916,14 +1050,128 @@ app.get('/api/products', async (req,res) => {
     }
 });
 
-app.get('/api/banners', async (req,res) => {
+// ─── PUBLIC: Lấy banner theo vị trí ───
+app.get('/api/banners', async (req, res) => {
     try {
-        const banners = await Banner.find({ isActive: true }).sort({ order: 1, createdAt: -1 });
+        const position = String(req.query?.position || '').trim();
+        const filter = { isActive: true };
+        if (position) filter.position = position;
+
+        // Lọc theo ngày hiệu lực
+        const now = new Date();
+        filter.$and = [
+            { $or: [{ startDate: null }, { startDate: { $lte: now } }] },
+            { $or: [{ endDate: null }, { endDate: { $gte: now } }] }
+        ];
+
+        const banners = await Banner.find(filter).sort({ order: 1, createdAt: -1 });
         res.json(banners);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
+
+// ─── ADMIN: Lấy TẤT CẢ banner (kể cả inactive) ───
+app.get('/api/admin/banners', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const position = String(req.query?.position || '').trim();
+        const filter = position ? { position } : {};
+        const banners = await Banner.find(filter).sort({ order: 1, createdAt: -1 });
+        return res.json({ banners });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+// ─── ADMIN: Tạo banner mới ───
+app.post('/api/admin/banners', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const { title, subtitle, image, imageMobile, link, buttonText,
+                position, seriesKey, overlayColor, textColor, order,
+                startDate, endDate, isActive } = req.body;
+
+        if (!title || !image) {
+            return res.status(400).json({ message: 'Tiêu đề và ảnh là bắt buộc' });
+        }
+
+        const banner = await Banner.create({
+            title: String(title).trim(),
+            subtitle: String(subtitle || '').trim(),
+            image: String(image).trim(),
+            imageMobile: String(imageMobile || '').trim(),
+            link: String(link || '/').trim(),
+            buttonText: String(buttonText || '').trim(),
+            position: position || 'hero',
+            seriesKey: String(seriesKey || '').trim(),
+            overlayColor: String(overlayColor || '').trim(),
+            textColor: String(textColor || '#ffffff').trim(),
+            order: Number(order || 0),
+            startDate: startDate ? new Date(startDate) : null,
+            endDate: endDate ? new Date(endDate) : null,
+            isActive: isActive !== false
+        });
+
+        return res.status(201).json({ banner });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+// ─── ADMIN: Cập nhật banner ───
+app.put('/api/admin/banners/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const banner = await Banner.findById(req.params.id);
+        if (!banner) return res.status(404).json({ message: 'Banner không tồn tại' });
+
+        const fields = ['title', 'subtitle', 'image', 'imageMobile', 'link', 'buttonText',
+                        'position', 'seriesKey', 'overlayColor', 'textColor', 'order', 'isActive'];
+
+        for (const field of fields) {
+            if (req.body[field] !== undefined) {
+                banner[field] = req.body[field];
+            }
+        }
+        if (req.body.startDate !== undefined) banner.startDate = req.body.startDate ? new Date(req.body.startDate) : null;
+        if (req.body.endDate !== undefined) banner.endDate = req.body.endDate ? new Date(req.body.endDate) : null;
+
+        await banner.save();
+        return res.json({ banner });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+// ─── ADMIN: Xóa banner ───
+app.delete('/api/admin/banners/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const banner = await Banner.findByIdAndDelete(req.params.id);
+        if (!banner) return res.status(404).json({ message: 'Banner không tồn tại' });
+        return res.json({ message: 'Đã xóa banner thành công' });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+// ─── ADMIN: Sắp xếp lại thứ tự banner (bulk reorder) ───
+app.put('/api/admin/banners-reorder', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const items = Array.isArray(req.body?.items) ? req.body.items : [];
+        if (items.length === 0) return res.status(400).json({ message: 'Danh sách items trống' });
+
+        await Banner.bulkWrite(
+            items.map((item, index) => ({
+                updateOne: {
+                    filter: { _id: item.id },
+                    update: { $set: { order: index } }
+                }
+            }))
+        );
+        return res.json({ message: 'Đã cập nhật thứ tự banner' });
+    } catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+});
+
 
 app.get('/api/truesplice-lines', async (req, res) => {
     try {
@@ -1061,26 +1309,30 @@ app.get('/api/table-lines', async (req, res) => {
 
 // ====================== VOUCHER & SHIPPING API ======================
 
+// DB-based voucher validate (thay thế hardcode cũ)
 app.post('/api/voucher/validate', async (req, res) => {
     try {
         const code = String(req.body?.code || '').toUpperCase().trim();
         const subtotal = Number(req.body?.subtotal || 0);
         const city = String(req.body?.city || '').trim();
+        const userId = req.authUser?._id || null;
+
+        if (!code) return res.status(400).json({ valid: false, message: 'Vui lòng nhập mã giảm giá' });
 
         const shippingFee = calculateShippingFee(city);
-        const voucher = VOUCHER_CODES[code];
+        const result = await applyVoucherDB(code, subtotal, shippingFee, userId);
 
-        if (!voucher) {
-            return res.status(400).json({ valid: false, message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn' });
+        if (result.error) {
+            return res.status(400).json({ valid: false, message: result.error });
         }
 
-        const result = applyVoucher(code, subtotal, shippingFee);
         return res.json({
             valid: true,
             code,
-            description: voucher.description,
+            description: result.voucher?.description || '',
             discount: result.discount,
-            shippingFee: result.shippingFee
+            shippingFee: result.shippingFee,
+            finalTotal: Math.max(0, subtotal + result.shippingFee - result.discount)
         });
     } catch (err) {
         return res.status(500).json({ message: err.message });
@@ -1091,7 +1343,8 @@ app.post('/api/shipping/calculate', async (req, res) => {
     try {
         const city = String(req.body?.city || '').trim();
         const shippingFee = calculateShippingFee(city);
-        return res.json({ shippingFee, currency: '₫' });
+        const zoneLabel = getShippingZoneLabel(city);
+        return res.json({ shippingFee, zoneLabel, currency: '$', zones: SHIPPING_ZONES });
     } catch (err) {
         return res.status(500).json({ message: err.message });
     }
@@ -1185,8 +1438,8 @@ app.use('/api/payment', createPaymentRouter({
     resolveOrderItemProduct,
     syncInventoryFromVariants,
     calculateShippingFee,
-    applyVoucher,
-    VOUCHER_CODES,
+    applyVoucherDB,
+    Voucher,
     SELLER_BANK_INFO
 }));
 
@@ -1410,7 +1663,12 @@ app.get('/api/admin/analytics/kpis', requireAuth, requireAdmin, async (req, res)
     }
 });
 
+// ─── VOUCHER ADMIN & PUBLIC ROUTES ───
+app.use('/api/vouchers', createVoucherRouter({ requireAuth, requireAdmin, Voucher }));
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT,() => {
+app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    // Khởi động Auto-Cancel Scheduler sau khi server sẵn sàng
+    startAutoCancelScheduler(Order, Inventory);
 });

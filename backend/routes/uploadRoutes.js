@@ -1,6 +1,6 @@
 /**
  * Cloudinary Upload Routes
- * Upload hình ảnh sản phẩm lên Cloudinary thay vì lưu cục bộ
+ * Upload product images to Cloudinary instead of storing locally
  */
 const express = require('express');
 const multer = require('multer');
@@ -107,7 +107,7 @@ const createUploadRouter = ({ requireAuth, requireAdmin }) => {
       if (!isConfigured) {
         return res.json({
           configured: false,
-          message: 'Cloudinary chưa được cấu hình. Vui lòng thêm CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET vào file .env'
+          message: 'Cloudinary is not configured. Please add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET to the .env file'
         });
       }
 
@@ -117,12 +117,12 @@ const createUploadRouter = ({ requireAuth, requireAdmin }) => {
         return res.json({
           configured: true,
           cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-          message: 'Cloudinary đã sẵn sàng'
+          message: 'Cloudinary is ready'
         });
       } catch (pingError) {
         return res.json({
           configured: false,
-          message: 'Không thể kết nối tới Cloudinary. Vui lòng kiểm tra lại thông tin xác thực.'
+          message: 'Cannot connect to Cloudinary. Please check your credentials.'
         });
       }
     } catch (err) {

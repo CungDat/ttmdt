@@ -83,7 +83,7 @@ function CartDrawer({
     }
     axios.post('http://localhost:5000/api/shipping/calculate', { city: selectedProvince.name })
       .then((res) => setShippingFee(Number(res.data?.shippingFee) || 0))
-      .catch(() => setShippingFee(50000));
+      .catch(() => setShippingFee(100));
   }, [selectedProvinceCode, provinces]);
 
   // Sync address to parent state
@@ -98,7 +98,7 @@ function CartDrawer({
       district: dist?.name || '',
       ward: ward?.name || '',
       country: 'Vietnam',
-      postalCode: prev.postalCode || '700000'
+      postalCode: prev.postalCode || '10000'
     }));
   }, [selectedProvinceCode, selectedDistrictCode, selectedWardCode, provinces, districts, wards]);
 
@@ -120,7 +120,7 @@ function CartDrawer({
         setVoucherError('');
       }
     } catch (err) {
-      setVoucherError(err.response?.data?.message || 'Mã giảm giá không hợp lệ');
+      setVoucherError(err.response?.data?.message || 'Invalid voucher code');
       setVoucherApplied(null);
       setDiscount(0);
     }
@@ -140,11 +140,6 @@ function CartDrawer({
       total,
       voucherCode: voucherApplied?.code || ''
     });
-  };
-
-  const formatVND = (value) => {
-    if (value >= 1000) return `${(value / 1000).toFixed(0)}k₫`;
-    return `${value.toLocaleString()}₫`;
   };
 
   return (
@@ -207,21 +202,21 @@ function CartDrawer({
                 <p className="cart-section-title">Shipping details</p>
 
                 <label className="cart-field">
-                  Họ và tên
+                  Full Name
                   <input type="text" className="cart-input" value={shippingInfo.fullName}
                     onChange={(e) => onShippingChange((prev) => ({ ...prev, fullName: e.target.value }))}
-                    placeholder="Nguyễn Văn A" />
+                    placeholder="John Doe" />
                 </label>
 
                 <div className="cart-field-grid">
                   <label className="cart-field">
-                    Số điện thoại
+                    Phone Number
                     <input type="tel" className="cart-input" value={shippingInfo.phone}
                       onChange={(e) => onShippingChange((prev) => ({ ...prev, phone: e.target.value }))}
                       placeholder="0123456789" />
                   </label>
                   <label className="cart-field">
-                    Mã bưu điện
+                    Postal Code
                     <input type="text" className="cart-input" value={shippingInfo.postalCode}
                       onChange={(e) => onShippingChange((prev) => ({ ...prev, postalCode: e.target.value }))}
                       placeholder="700000" />
@@ -230,10 +225,10 @@ function CartDrawer({
 
                 {/* Province / District / Ward cascading selects */}
                 <label className="cart-field">
-                  Tỉnh / Thành phố
+                  Province / City
                   <select className="cart-select" value={selectedProvinceCode}
                     onChange={(e) => setSelectedProvinceCode(e.target.value)}>
-                    <option value="">-- Chọn Tỉnh/Thành phố --</option>
+                    <option value="">-- Select Province/City --</option>
                     {provinces.map((p) => (
                       <option key={p.code} value={p.code}>{p.name}</option>
                     ))}
@@ -242,22 +237,22 @@ function CartDrawer({
 
                 <div className="cart-field-grid">
                   <label className="cart-field">
-                    Quận / Huyện
+                    District
                     <select className="cart-select" value={selectedDistrictCode}
                       onChange={(e) => setSelectedDistrictCode(e.target.value)}
                       disabled={districts.length === 0}>
-                      <option value="">-- Chọn Quận/Huyện --</option>
+                      <option value="">-- Select District --</option>
                       {districts.map((d) => (
                         <option key={d.code} value={d.code}>{d.name}</option>
                       ))}
                     </select>
                   </label>
                   <label className="cart-field">
-                    Phường / Xã
+                    Ward
                     <select className="cart-select" value={selectedWardCode}
                       onChange={(e) => setSelectedWardCode(e.target.value)}
                       disabled={wards.length === 0}>
-                      <option value="">-- Chọn Phường/Xã --</option>
+                      <option value="">-- Select Ward --</option>
                       {wards.map((w) => (
                         <option key={w.code} value={w.code}>{w.name}</option>
                       ))}
@@ -266,16 +261,16 @@ function CartDrawer({
                 </div>
 
                 <label className="cart-field">
-                  Địa chỉ chi tiết
+                  Address Details
                   <input type="text" className="cart-input" value={shippingInfo.addressLine1}
                     onChange={(e) => onShippingChange((prev) => ({ ...prev, addressLine1: e.target.value }))}
-                    placeholder="123 Nguyễn Trãi, Phường 2" />
+                    placeholder="123 Main St, Apt 2" />
                 </label>
 
                 {/* Voucher */}
                 <p className="cart-section-title" style={{ marginTop: 16 }}>
                   <Tag size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                  Mã giảm giá
+                  Voucher Code
                 </p>
                 <div className="cart-voucher-row">
                   <input
@@ -283,20 +278,20 @@ function CartDrawer({
                     className="cart-input cart-voucher-input"
                     value={voucherCode}
                     onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
-                    placeholder="Nhập mã: PREDATOR10"
+                    placeholder="Enter code: PREDATOR10"
                     disabled={!!voucherApplied}
                   />
                   {voucherApplied ? (
-                    <button type="button" className="cart-voucher-remove-btn" onClick={handleRemoveVoucher}>Xóa</button>
+                    <button type="button" className="cart-voucher-remove-btn" onClick={handleRemoveVoucher}>Remove</button>
                   ) : (
-                    <button type="button" className="cart-voucher-btn" onClick={handleApplyVoucher}>Áp dụng</button>
+                    <button type="button" className="cart-voucher-btn" onClick={handleApplyVoucher}>Apply</button>
                   )}
                 </div>
                 {voucherError ? <p className="cart-voucher-error">{voucherError}</p> : null}
                 {voucherApplied ? (
                   <p className="cart-voucher-success">
                     <CheckCircle2 size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                    {voucherApplied.description} — Giảm ${discount > 0 ? discount.toLocaleString() : ''}{voucherApplied.shippingFee === 0 ? ' + Miễn phí ship' : ''}
+                    {voucherApplied.description} — Discount ${discount > 0 ? discount.toFixed(2) : ''}{voucherApplied.shippingFee === 0 ? ' + Free shipping' : ''}
                   </p>
                 ) : null}
 
@@ -306,24 +301,24 @@ function CartDrawer({
                   <label className={`cart-payment-option ${paymentInfo.method === 'cod' ? 'cart-payment-option-active' : ''}`}>
                     <input type="radio" name="paymentMethod" value="cod" checked={paymentInfo.method === 'cod'}
                       onChange={() => onPaymentChange((prev) => ({ ...prev, method: 'cod' }))} />
-                    <span>Thanh toán khi nhận hàng (COD)</span>
+                    <span>Cash on Delivery (COD)</span>
                   </label>
                   <label className={`cart-payment-option ${paymentInfo.method === 'bank-transfer' ? 'cart-payment-option-active' : ''}`}>
                     <input type="radio" name="paymentMethod" value="bank-transfer" checked={paymentInfo.method === 'bank-transfer'}
                       onChange={() => onPaymentChange((prev) => ({ ...prev, method: 'bank-transfer' }))} />
-                    <span>Chuyển khoản ngân hàng</span>
+                    <span>Bank Transfer</span>
                   </label>
                   <label className={`cart-payment-option ${paymentInfo.method === 'vnpay' ? 'cart-payment-option-active' : ''}`}>
                     <input type="radio" name="paymentMethod" value="vnpay" checked={paymentInfo.method === 'vnpay'}
                       onChange={() => onPaymentChange((prev) => ({ ...prev, method: 'vnpay' }))} />
-                    <span>🏦 Thanh toán VNPAY (ATM/Visa/QR)</span>
+                    <span>🏦 VNPAY (ATM/Visa/QR)</span>
                   </label>
                 </div>
                 {paymentInfo.method === 'bank-transfer' ? (
-                  <p className="cart-payment-note">Sau khi bấm Thanh toán, mã QR sẽ hiển thị để bạn chuyển khoản.</p>
+                  <p className="cart-payment-note">After clicking Checkout, a QR code will be displayed for transfer.</p>
                 ) : null}
                 {paymentInfo.method === 'vnpay' ? (
-                  <p className="cart-payment-note">Bạn sẽ được chuyển đến cổng thanh toán VNPAY để hoàn tất giao dịch (Sandbox mode).</p>
+                  <p className="cart-payment-note">You will be redirected to VNPAY to complete the transaction (Sandbox mode).</p>
                 ) : null}
               </div>
 
@@ -332,32 +327,32 @@ function CartDrawer({
               {/* Summary */}
               <div className="cart-summary-block">
                 <div className="cart-summary-row">
-                  <span>Tạm tính</span>
+                  <span>Subtotal</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
                 <div className="cart-summary-row">
                   <span>
                     <Truck size={14} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                    Phí vận chuyển
+                    Shipping Fee
                   </span>
-                  <span>{shippingFee > 0 ? formatVND(shippingFee) : 'Free'}</span>
+                  <span>{shippingFee > 0 ? `$${shippingFee.toFixed(2)}` : 'Free'}</span>
                 </div>
                 {discount > 0 ? (
                   <div className="cart-summary-row cart-summary-discount">
-                    <span>Giảm giá</span>
-                    <span>-${discount.toLocaleString()}</span>
+                    <span>Discount</span>
+                    <span>-${discount.toFixed(2)}</span>
                   </div>
                 ) : null}
                 <div className="cart-summary-row cart-summary-total">
-                  <strong>Tổng cộng</strong>
+                  <strong>Total</strong>
                   <strong>${total.toFixed(2)}</strong>
                 </div>
               </div>
 
               <div className="cart-footer-actions">
-                <button type="button" className="cart-clear-btn" onClick={onClear}>Xóa giỏ hàng</button>
+                <button type="button" className="cart-clear-btn" onClick={onClear}>Clear Cart</button>
                 <button type="button" className="cart-checkout-btn" onClick={handleCheckout} disabled={isCheckoutSubmitting}>
-                  {isCheckoutSubmitting ? 'Đang xử lý...' : 'Thanh toán'}
+                  {isCheckoutSubmitting ? 'Processing...' : 'Checkout'}
                 </button>
               </div>
             </div>

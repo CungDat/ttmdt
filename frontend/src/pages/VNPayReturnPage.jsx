@@ -18,15 +18,15 @@ function VNPayReturnPage() {
 
         if (response.data?.success) {
           setStatus('success');
-          setMessage(response.data.message || 'Thanh toán thành công!');
+          setMessage(response.data.message || 'Payment successful!');
           setOrderId(response.data.orderId || '');
         } else {
           setStatus('failed');
-          setMessage(response.data.message || 'Thanh toán thất bại');
+          setMessage(response.data.message || 'Payment failed');
         }
       } catch (err) {
         setStatus('failed');
-        setMessage('Không thể xác nhận thanh toán. Vui lòng liên hệ hỗ trợ.');
+        setMessage('Cannot verify payment. Please contact support.');
       }
     };
 
@@ -39,19 +39,19 @@ function VNPayReturnPage() {
         {status === 'loading' && (
           <>
             <Loader2 className="vnpay-return-icon vnpay-return-loading" size={64} />
-            <h2 className="vnpay-return-title">Đang xác nhận thanh toán...</h2>
-            <p className="vnpay-return-text">Vui lòng đợi trong giây lát</p>
+            <h2 className="vnpay-return-title">Verifying payment...</h2>
+            <p className="vnpay-return-text">Please wait a moment</p>
           </>
         )}
 
         {status === 'success' && (
           <>
             <CheckCircle2 className="vnpay-return-icon vnpay-return-success" size={64} />
-            <h2 className="vnpay-return-title">Thanh toán thành công!</h2>
+            <h2 className="vnpay-return-title">Payment successful!</h2>
             <p className="vnpay-return-text">{message}</p>
             {orderId && (
               <p className="vnpay-return-order-id">
-                Mã đơn hàng: <strong>#{String(orderId).slice(-8).toUpperCase()}</strong>
+                Order code: <strong>#{String(orderId).slice(-8).toUpperCase()}</strong>
               </p>
             )}
             <div className="vnpay-return-actions">
@@ -61,7 +61,7 @@ function VNPayReturnPage() {
                 onClick={() => navigate('/')}
               >
                 <ArrowLeft size={16} />
-                Về trang chủ
+                Back to Home
               </button>
             </div>
           </>
@@ -70,7 +70,7 @@ function VNPayReturnPage() {
         {status === 'failed' && (
           <>
             <XCircle className="vnpay-return-icon vnpay-return-error" size={64} />
-            <h2 className="vnpay-return-title">Thanh toán thất bại</h2>
+            <h2 className="vnpay-return-title">Payment failed</h2>
             <p className="vnpay-return-text">{message}</p>
             <div className="vnpay-return-actions">
               <button
@@ -79,7 +79,7 @@ function VNPayReturnPage() {
                 onClick={() => navigate('/')}
               >
                 <ArrowLeft size={16} />
-                Về trang chủ
+                Back to Home
               </button>
             </div>
           </>

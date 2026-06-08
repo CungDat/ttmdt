@@ -432,7 +432,7 @@ function App() {
       city: shippingInfo.city.trim(),
       province: (shippingInfo.province || '').trim(),
       country: shippingInfo.country.trim() || 'Vietnam',
-      postalCode: shippingInfo.postalCode.trim() || '700000'
+      postalCode: shippingInfo.postalCode.trim() || '10000'
     };
     const paymentFields = {
       method: paymentInfo.method,
@@ -482,10 +482,10 @@ function App() {
           setIsCartOpen(false);
           window.location.href = response.data.paymentUrl;
         } else {
-          setCartError('Không thể tạo liên kết thanh toán VNPAY.');
+          setCartError('Cannot generate VNPAY payment link.');
         }
       } catch (error) {
-        setCartError(error?.response?.data?.message || 'Thanh toán VNPAY thất bại. Vui lòng thử lại.');
+        setCartError(error?.response?.data?.message || 'VNPAY payment failed. Please try again.');
       } finally {
         setIsCheckoutSubmitting(false);
       }

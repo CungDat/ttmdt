@@ -3,23 +3,23 @@ import { Box, Check, CheckCircle2, ClipboardList, Clock, Package, ShieldCheck, T
 import axios from 'axios';
 
 const ORDER_STATUS_STEPS = [
-  { key: 'pending', label: 'Đã đặt hàng', icon: ClipboardList, color: '#f59e0b' },
-  { key: 'paid', label: 'Đã thanh toán', icon: ShieldCheck, color: '#3b82f6' },
-  { key: 'packing', label: 'Đang đóng gói', icon: Box, color: '#8b5cf6' },
-  { key: 'shipped', label: 'Đang giao hàng', icon: Truck, color: '#06b6d4' },
-  { key: 'delivered', label: 'Giao thành công', icon: CheckCircle2, color: '#10b981' }
+  { key: 'pending', label: 'Pending', icon: ClipboardList, color: '#f59e0b' },
+  { key: 'paid', label: 'Paid', icon: ShieldCheck, color: '#3b82f6' },
+  { key: 'packing', label: 'Packing', icon: Box, color: '#8b5cf6' },
+  { key: 'shipped', label: 'Shipped', icon: Truck, color: '#06b6d4' },
+  { key: 'delivered', label: 'Delivered', icon: CheckCircle2, color: '#10b981' }
 ];
 
 const STATUS_LABELS = {
-  pending: 'Đã đặt hàng',
-  paid: 'Đã thanh toán',
-  processing: 'Đang xử lý',
-  packing: 'Đang đóng gói',
-  shipped: 'Đang giao hàng',
-  'in-transit': 'Đang vận chuyển',
-  delivered: 'Giao thành công',
-  cancelled: 'Đã hủy',
-  returned: 'Đã trả hàng'
+  pending: 'Pending',
+  paid: 'Paid',
+  processing: 'Processing',
+  packing: 'Packing',
+  shipped: 'Shipped',
+  'in-transit': 'In-transit',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+  returned: 'Returned'
 };
 
 function OrderTimeline({ order, authToken }) {
@@ -82,7 +82,7 @@ function OrderTimeline({ order, authToken }) {
                   </p>
                   {historyEntry?.updatedAt ? (
                     <p className="order-timeline-date">
-                      {new Date(historyEntry.updatedAt).toLocaleString('vi-VN', {
+                      {new Date(historyEntry.updatedAt).toLocaleString('en-US', {
                         day: '2-digit', month: '2-digit', year: 'numeric',
                         hour: '2-digit', minute: '2-digit'
                       })}
@@ -116,19 +116,19 @@ function OrdersDrawer({ isOpen, onClose, orders, isLoading, authToken }) {
 
       <aside className={`orders-drawer ${isOpen ? 'orders-drawer-open' : 'orders-drawer-closed'}`} aria-label="Order history">
         <div className="orders-drawer-head">
-          <h2 className="orders-drawer-title">Đơn hàng của tôi</h2>
+          <h2 className="orders-drawer-title">My Orders</h2>
           <button type="button" className="cart-icon-button" onClick={onClose} aria-label="Close orders">
             <X className="cart-icon" />
           </button>
         </div>
 
-        {isLoading ? <p className="orders-loading">Đang tải đơn hàng...</p> : null}
+        {isLoading ? <p className="orders-loading">Loading orders...</p> : null}
 
         {!isLoading && orders.length === 0 ? (
           <div className="orders-empty">
             <ClipboardList className="orders-empty-icon" />
-            <p className="orders-empty-title">Chưa có đơn hàng</p>
-            <p className="orders-empty-text">Hoàn tất thanh toán để xem đơn hàng tại đây.</p>
+            <p className="orders-empty-title">No orders yet</p>
+            <p className="orders-empty-text">Complete a purchase to view your orders here.</p>
           </div>
         ) : null}
 
@@ -140,8 +140,8 @@ function OrdersDrawer({ isOpen, onClose, orders, isLoading, authToken }) {
                 <li key={order._id} className="order-card">
                   <button type="button" className="order-card-head" onClick={() => toggleExpand(order._id)}>
                     <div>
-                      <p className="order-id">Đơn #{String(order._id).slice(-8).toUpperCase()}</p>
-                      <p className="order-date">{new Date(order.createdAt).toLocaleString('vi-VN')}</p>
+                      <p className="order-id">Order #{String(order._id).slice(-8).toUpperCase()}</p>
+                      <p className="order-date">{new Date(order.createdAt).toLocaleString('en-US')}</p>
                     </div>
                     <span className={`order-status order-status-${order.status || 'pending'}`}>
                       {STATUS_LABELS[order.status] || order.status || 'pending'}
@@ -155,7 +155,7 @@ function OrdersDrawer({ isOpen, onClose, orders, isLoading, authToken }) {
 
                       {order.shippingAddress ? (
                         <div className="order-shipping">
-                          <p className="order-shipping-title">Giao đến</p>
+                          <p className="order-shipping-title">Shipping to</p>
                           <p className="order-shipping-name">{order.shippingAddress.fullName}</p>
                           <p className="order-shipping-text">{order.shippingAddress.phone}</p>
                           <p className="order-shipping-text">
@@ -169,15 +169,15 @@ function OrdersDrawer({ isOpen, onClose, orders, isLoading, authToken }) {
 
                       {order.payment ? (
                         <div className="order-payment">
-                          <p className="order-shipping-title">Thanh toán</p>
+                          <p className="order-shipping-title">Payment</p>
                           {order.payment.method === 'cod' ? (
-                            <p className="order-shipping-name">Thanh toán khi nhận hàng (COD)</p>
+                            <p className="order-shipping-name">Cash on Delivery (COD)</p>
                           ) : (
                             <>
-                              <p className="order-shipping-name">Chuyển khoản ngân hàng</p>
+                              <p className="order-shipping-name">Bank Transfer</p>
                               <p className="order-shipping-text">{order.payment.bankName} • {order.payment.accountNumber}</p>
                               <p className="order-shipping-text">{order.payment.accountHolder}</p>
-                              {order.payment.reference ? <p className="order-shipping-text">Nội dung: {order.payment.reference}</p> : null}
+                              {order.payment.reference ? <p className="order-shipping-text">Note: {order.payment.reference}</p> : null}
                             </>
                           )}
                         </div>
@@ -194,23 +194,23 @@ function OrdersDrawer({ isOpen, onClose, orders, isLoading, authToken }) {
 
                       <div className="order-total-block">
                         <div className="order-total-row">
-                          <span>Tạm tính</span>
+                          <span>Subtotal</span>
                           <span>{order.currencySymbol || '$'}{Number(order.subtotal || 0).toFixed(2)}</span>
                         </div>
                         {order.shippingFee > 0 ? (
                           <div className="order-total-row">
-                            <span>Phí vận chuyển</span>
-                            <span>{Number(order.shippingFee).toLocaleString()}₫</span>
+                            <span>Shipping Fee</span>
+                            <span>${Number(order.shippingFee).toFixed(2)}</span>
                           </div>
                         ) : null}
                         {order.discount > 0 ? (
                           <div className="order-total-row order-discount-row">
-                            <span>Giảm giá {order.voucherCode ? `(${order.voucherCode})` : ''}</span>
-                            <span>-${Number(order.discount).toLocaleString()}</span>
+                            <span>Discount {order.voucherCode ? `(${order.voucherCode})` : ''}</span>
+                            <span>-${Number(order.discount).toFixed(2)}</span>
                           </div>
                         ) : null}
                         <div className="order-total-row order-grand-total">
-                          <strong>Tổng cộng</strong>
+                          <strong>Total</strong>
                           <strong>{order.currencySymbol || '$'}{Number(order.total || order.subtotal || 0).toFixed(2)}</strong>
                         </div>
                       </div>

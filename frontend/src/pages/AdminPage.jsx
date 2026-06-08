@@ -6,6 +6,8 @@ import AdminInventorySection from '../components/admin/AdminInventorySection';
 import AdminUsersSection from '../components/admin/AdminUsersSection';
 import AdminOrdersSection from '../components/admin/AdminOrdersSection';
 import AdminAnalyticsSection from '../components/admin/AdminAnalyticsSection';
+import AdminVouchersSection from '../components/admin/AdminVouchersSection';
+import AdminBannersSection from '../components/admin/AdminBannersSection';
 import { LINE_TYPE_OPTIONS, NEXT_STATUS, STATUS_OPTIONS } from './admin/adminConstants';
 
 function AdminPage({ currentUser, authToken, onRequireLogin }) {
@@ -551,7 +553,16 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
     try {
       await axios.put(
         `http://localhost:5000/api/admin/orders/${editingOrderId}`,
-        editingOrderDraft,
+        {
+          status: editingOrderDraft.status,
+          notes: editingOrderDraft.notes || '',
+          assignedWarehouse: editingOrderDraft.assignedWarehouse || 'Main Warehouse',
+          tracking: {
+            number: editingOrderDraft.tracking?.number || '',
+            carrier: editingOrderDraft.tracking?.carrier || '',
+            currentLocation: editingOrderDraft.tracking?.currentLocation || ''
+          }
+        },
         { headers: authHeaders }
       );
       setEditingOrderId('');
@@ -562,23 +573,18 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
   };
 
   const handleMoveOrderToNextStatus = async (order) => {
-    const nextStatus = NEXT_STATUS[order.status];
+    // Support override for cancel
+    const nextStatus = order._overrideNextStatus || NEXT_STATUS[order.status];
     if (!nextStatus) {
       return;
     }
 
     try {
       await axios.put(
-        `http://localhost:5000/api/admin/orders/${order._id}`,
+        `http://localhost:5000/api/admin/orders/${order._id}/status`,
         {
           status: nextStatus,
-          notes: order.notes || '',
-          assignedWarehouse: order.assignedWarehouse || 'Main Warehouse',
-          tracking: {
-            number: order.tracking?.number || '',
-            carrier: order.tracking?.carrier || '',
-            currentLocation: order.tracking?.currentLocation || ''
-          }
+          note: `Moved from ${order.status} to ${nextStatus}`
         },
         { headers: authHeaders }
       );
@@ -687,12 +693,16 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
 
   const tabTitle = {
     dashboard: 'Dashboard',
-    products: 'Product Management',
-    users: 'Customer Management',
-    inventory: 'Inventory Control',
-    orders: 'Order Workflow',
-    analytics: 'Business Reports'
+    products: 'Products',
+    users: 'Customers',
+    inventory: 'Inventory',
+    orders: 'Orders',
+    analytics: 'Analytics',
+    vouchers: 'Vouchers',
+    banners: 'Banners'
   }[tab] || 'Dashboard';
+
+  const recentOrders = orders.slice(0, 8);
 
   if (!currentUser) {
     return (
@@ -730,10 +740,13 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
             <button type="button" className={`admx-nav-btn ${tab === 'products' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('products')}>Products</button>
             <button type="button" className={`admx-nav-btn ${tab === 'users' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('users')}>Customers</button>
             <button type="button" className={`admx-nav-btn ${tab === 'inventory' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('inventory')}>Inventory</button>
-            <button type="button" className={`admx-nav-btn ${tab === 'analytics' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('analytics')}>Reports</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'analytics' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('analytics')}>Analytics</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'vouchers' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('vouchers')}>Vouchers</button>
+            <button type="button" className={`admx-nav-btn ${tab === 'banners' ? 'admx-nav-btn-active' : ''}`} onClick={() => setTab('banners')}>Banners</button>
           </nav>
           <div className="admx-side-foot">
-            <p className="admx-side-meta">Admin</p>
+            <a href="/" className="admx-back-store-link">Back to Store</a>
+            <p className="admx-side-meta">Administrator</p>
             <strong>{currentUser?.name || 'Administrator'}</strong>
           </div>
         </aside>
@@ -749,8 +762,13 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
             </div>
           </header>
 
-          {error ? <p className="admin-error">{error}</p> : null}
-          {isLoading ? <p className="admin-loading">Loading...</p> : null}
+          {error ? (
+            <div className="admin-error">
+              <span>{error}</span>
+              <button type="button" className="admx-error-dismiss" onClick={() => setError('')}>✕</button>
+            </div>
+          ) : null}
+          {isLoading ? <p className="admin-loading">Loading data...</p> : null}
 
           {!isLoading && tab === 'dashboard' ? (
             <AdminDashboardSection
@@ -766,6 +784,8 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
               topCategoriesTotal={topCategoriesTotal}
               topCategories={topCategories}
               orderStatusCounts={orderStatusCounts}
+              recentOrders={recentOrders}
+              onNavigateTab={setTab}
             />
           ) : null}
 
@@ -853,6 +873,14 @@ function AdminPage({ currentUser, authToken, onRequireLogin }) {
 
         {!isLoading && tab === 'analytics' ? (
           <AdminAnalyticsSection analytics={analytics} />
+        ) : null}
+
+        {!isLoading && tab === 'vouchers' ? (
+          <AdminVouchersSection authHeaders={authHeaders} />
+        ) : null}
+
+        {!isLoading && tab === 'banners' ? (
+          <AdminBannersSection authHeaders={authHeaders} />
         ) : null}
         </section>
       </section>

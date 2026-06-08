@@ -152,7 +152,7 @@ function Navbar({
                       navigate('/profile');
                     }}
                   >
-                    Thông tin cá nhân
+                    Profile Info
                   </button>
                   <button
                     type="button"
@@ -172,7 +172,7 @@ function Navbar({
                       navigate('/search');
                     }}
                   >
-                    Tìm kiếm nâng cao
+                    Advanced Search
                   </button>
                   {currentUser.role === 'admin' ? (
                     <button

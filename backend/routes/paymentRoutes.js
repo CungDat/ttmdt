@@ -14,8 +14,8 @@ const createPaymentRouter = ({
   resolveOrderItemProduct,
   syncInventoryFromVariants,
   calculateShippingFee,
-  applyVoucher,
-  VOUCHER_CODES,
+  applyVoucherDB,
+  Voucher,
   SELLER_BANK_INFO
 }) => {
   const router = express.Router();
@@ -130,7 +130,7 @@ const createPaymentRouter = ({
           const fallbackName =
             resolvedItems.find((item) => String(item.productId) === productIdKey)?.name || productIdKey;
           return res.status(400).json({
-            message: `Không đủ tồn kho cho ${fallbackName}. Còn: ${totalAvailable}, cần: ${requiredQty}`
+            message: `Insufficient stock for ${fallbackName}. Available: ${totalAvailable}, required: ${requiredQty}`
           });
         }
       }
@@ -142,7 +142,7 @@ const createPaymentRouter = ({
       const voucherCode = String(req.body?.voucherCode || '').trim();
 
       if (voucherCode) {
-        const voucherResult = applyVoucher(voucherCode, subtotal, shippingFee);
+        const voucherResult = await applyVoucherDB(voucherCode, subtotal, shippingFee, req.authUser?._id);
         if (!voucherResult.error) {
           discount = voucherResult.discount;
           shippingFee = voucherResult.shippingFee;
@@ -197,7 +197,7 @@ const createPaymentRouter = ({
         },
         currencySymbol: req.body?.currencySymbol || '$',
         status: 'pending',
-        statusHistory: [{ status: 'pending', updatedAt: new Date(), note: 'Đơn hàng đã được tạo - Chờ thanh toán VNPAY' }]
+        statusHistory: [{ status: 'pending', updatedAt: new Date(), note: 'Order created - Awaiting VNPAY payment' }]
       });
 
       // Build VNPAY payment URL
@@ -217,7 +217,7 @@ const createPaymentRouter = ({
         vnp_Locale: 'vn',
         vnp_CurrCode: 'VND',
         vnp_TxnRef: orderId,
-        vnp_OrderInfo: `Thanh toan don hang Lab Billiard #${String(order._id).slice(-8).toUpperCase()}`,
+        vnp_OrderInfo: `Payment for Lab Billiard Order #${String(order._id).slice(-8).toUpperCase()}`,
         vnp_OrderType: 'billpayment',
         vnp_Amount: vnpAmount,
         vnp_ReturnUrl: VNPAY_CONFIG.returnUrl,
@@ -280,7 +280,7 @@ const createPaymentRouter = ({
       if (!order) {
         return res.json({
           success: false,
-          message: 'Không tìm thấy đơn hàng',
+          message: 'Order not found',
           code: 'ORDER_NOT_FOUND'
         });
       }
@@ -288,18 +288,24 @@ const createPaymentRouter = ({
       if (secureHash === checkSum) {
         if (responseCode === '00') {
           // Payment successful
+          const wasAlreadyPaid = order.status === 'paid';
           order.status = 'paid';
           order.payment.method = 'vnpay';
           order.statusHistory.push({
             status: 'paid',
             updatedAt: new Date(),
-            note: `Thanh toán VNPAY thành công. Mã GD: ${vnpTxnRef}`
+            note: `VNPAY payment successful. Transaction ID: ${vnpTxnRef}`
           });
           await order.save();
 
+          if (!wasAlreadyPaid && order.voucherCode && order.discount > 0) {
+            const usedVoucher = await Voucher.findOne({ code: order.voucherCode.toUpperCase() });
+            if (usedVoucher) await usedVoucher.markUsed(order.user).catch(() => {});
+          }
+
           return res.json({
             success: true,
-            message: 'Thanh toán thành công',
+            message: 'Payment successful',
             orderId: order._id,
             code: '00'
           });
@@ -330,13 +336,13 @@ const createPaymentRouter = ({
           order.statusHistory.push({
             status: 'cancelled',
             updatedAt: new Date(),
-            note: `Thanh toán VNPAY thất bại. Mã lỗi: ${responseCode}`
+            note: `VNPAY payment failed. Error code: ${responseCode}`
           });
           await order.save();
 
           return res.json({
             success: false,
-            message: 'Thanh toán thất bại',
+            message: 'Payment failed',
             orderId: order._id,
             code: responseCode
           });
@@ -344,7 +350,7 @@ const createPaymentRouter = ({
       } else {
         return res.json({
           success: false,
-          message: 'Chữ ký không hợp lệ',
+          message: 'Invalid signature',
           code: 'INVALID_SIGNATURE'
         });
       }
@@ -389,9 +395,15 @@ const createPaymentRouter = ({
         order.statusHistory.push({
           status: 'paid',
           updatedAt: new Date(),
-          note: `IPN: Thanh toán VNPAY thành công. Mã GD: ${vnpTxnRef}`
+          note: `IPN: VNPAY payment successful. Transaction ID: ${vnpTxnRef}`
         });
         await order.save();
+
+        if (order.voucherCode && order.discount > 0) {
+          const usedVoucher = await Voucher.findOne({ code: order.voucherCode.toUpperCase() });
+          if (usedVoucher) await usedVoucher.markUsed(order.user).catch(() => {});
+        }
+
         return res.json({ RspCode: '00', Message: 'Confirm Success' });
       }
 

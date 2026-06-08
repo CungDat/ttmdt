@@ -43,12 +43,12 @@ function AdminProductsSection({
 }) {
   return (
     <section className="admin-card admx-panel-wrap">
-      <h2 className="admin-section-title">Billiard Product Catalog Management</h2>
-      <p className="admin-loading">Manage products by line (True Splice / P3 / Poison / Limited), then manage each variant by shaft, wrap, weight, collar, and SKU.</p>
+      <h2 className="admin-section-title">Product Catalog Management</h2>
+      <p className="admin-loading">Manage products by line, then manage variants by shaft, wrap, weight, collar and SKU.</p>
 
       <div className="admx-product-metrics">
         <div className="admx-product-metric">
-          <span>Total In Line</span>
+          <span>Total in Line</span>
           <strong>{productSummary.total}</strong>
         </div>
         <div className="admx-product-metric">
@@ -60,7 +60,7 @@ function AdminProductsSection({
           <strong>{productSummary.inactive}</strong>
         </div>
         <div className="admx-product-metric">
-          <span>Stock In Line</span>
+          <span>Line Stock</span>
           <strong>
             {productsInCurrentLine.reduce((sum, item) => {
               const summary = productInventorySummary.get(item._id);
@@ -90,16 +90,16 @@ function AdminProductsSection({
 
       <div className="admx-product-toolbar">
         <select className="admin-select" value={productStatusFilter} onChange={(e) => setProductStatusFilter(e.target.value)}>
-          <option value="all">All Status</option>
-          <option value="active">Active Only</option>
-          <option value="inactive">Inactive Only</option>
+          <option value="all">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
         </select>
         <select className="admin-select" value={productSortBy} onChange={(e) => setProductSortBy(e.target.value)}>
-          <option value="order-asc">Sort: Display Order ↑</option>
-          <option value="order-desc">Sort: Display Order ↓</option>
-          <option value="price-asc">Sort: Base Price ↑</option>
-          <option value="price-desc">Sort: Base Price ↓</option>
-          <option value="name-asc">Sort: Name A→Z</option>
+          <option value="order-asc">Order ↑</option>
+          <option value="order-desc">Order ↓</option>
+          <option value="price-asc">Base Price ↑</option>
+          <option value="price-desc">Base Price ↓</option>
+          <option value="name-asc">Name A→Z</option>
         </select>
         <button
           type="button"
@@ -109,16 +109,16 @@ function AdminProductsSection({
             setProductSortBy('order-asc');
           }}
         >
-          Reset View
+          Reset Filters
         </button>
       </div>
 
       <form className="admin-product-form" onSubmit={handleCreateProduct}>
-        <input className="admin-input" placeholder="Cue Line Name (e.g. Predator LE True Splice 16)" value={productDraft.name} onChange={(e) => setProductDraft((p) => ({ ...p, name: e.target.value }))} required />
+        <input className="admin-input" placeholder="Product line name (e.g. Predator LE True Splice 16)" value={productDraft.name} onChange={(e) => setProductDraft((p) => ({ ...p, name: e.target.value }))} required />
         <input className="admin-input" placeholder="Image URL" value={productDraft.image} onChange={(e) => setProductDraft((p) => ({ ...p, image: e.target.value }))} required />
-        <input className="admin-input" placeholder="Line Series Hero Image URL" value={productDraft.lineSeriesImage} onChange={(e) => setProductDraft((p) => ({ ...p, lineSeriesImage: e.target.value }))} />
-        <input className="admin-input" placeholder="Base Price" type="number" min="0" value={productDraft.price} onChange={(e) => setProductDraft((p) => ({ ...p, price: e.target.value }))} required />
-        <input className="admin-input" placeholder="Display Order (for storefront)" type="number" min="0" value={productDraft.order} onChange={(e) => setProductDraft((p) => ({ ...p, order: e.target.value }))} />
+        <input className="admin-input" placeholder="Line series hero image URL" value={productDraft.lineSeriesImage} onChange={(e) => setProductDraft((p) => ({ ...p, lineSeriesImage: e.target.value }))} />
+        <input className="admin-input" placeholder="Base price" type="number" min="0" value={productDraft.price} onChange={(e) => setProductDraft((p) => ({ ...p, price: e.target.value }))} required />
+        <input className="admin-input" placeholder="Display order" type="number" min="0" value={productDraft.order} onChange={(e) => setProductDraft((p) => ({ ...p, order: e.target.value }))} />
         <label className="admin-select">
           <input
             type="checkbox"
@@ -127,21 +127,21 @@ function AdminProductsSection({
           />
           {' '}Active
         </label>
-        <button type="submit" className="admin-primary-btn">Add Cue Line</button>
+        <button type="submit" className="admin-primary-btn">+ Add Product</button>
       </form>
 
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Model</th>
+              <th>Product</th>
               <th>Collection</th>
-              <th>Base Price</th>
-              <th>Display Order</th>
+              <th>Price</th>
+              <th>Order</th>
               <th>SKUs</th>
               <th>Stock</th>
               <th>Status</th>
-              <th>Variant Setup</th>
+              <th>Variants</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -232,10 +232,10 @@ function AdminProductsSection({
                             {activeProductQuickActionId === product._id
                               ? 'Saving...'
                               : product.isActive
-                                ? 'Set Inactive'
-                                : 'Set Active'}
+                                ? 'Hide Product'
+                                : 'Show Product'}
                           </button>
-                          <button type="button" className="admin-link-btn admin-link-btn-danger" onClick={() => handleDeleteProduct(product._id, product.lineType)}>Delete</button>
+                          <button type="button" className="admin-link-btn admin-link-btn-danger" onClick={() => { if (window.confirm(`Delete product "${product.name}"? This action cannot be undone.`)) handleDeleteProduct(product._id, product.lineType); }}>Delete</button>
                         </div>
                       </td>
                     </>
@@ -245,7 +245,7 @@ function AdminProductsSection({
             })}
             {filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={9}>No cue lines match this filter.</td>
+                <td colSpan={9}>No products match the filter.</td>
               </tr>
             ) : null}
           </tbody>
@@ -255,7 +255,7 @@ function AdminProductsSection({
       {selectedLineItem ? (
         <section className="admin-card">
           <h3 className="admin-section-title">Variants: {selectedLineItem.name}</h3>
-          <p className="admin-loading">Each combination (Shaft + Wrap + Weight + Collar) has its own SKU, price, and inventory level.</p>
+          <p className="admin-loading">Each combination (Shaft + Wrap + Weight + Collar) has its own SKU, price, and stock.</p>
 
           <form className="admin-product-form" onSubmit={handleCreateVariant}>
             <input className="admin-input" placeholder="SKU (e.g. TS16-RED-LW-19)" value={variantDraft.sku} onChange={(e) => setVariantDraft((p) => ({ ...p, sku: e.target.value }))} required />
@@ -265,7 +265,7 @@ function AdminProductsSection({
             <input className="admin-input" placeholder="Collar / Joint (e.g. Uni-Loc)" value={variantDraft.collar} onChange={(e) => setVariantDraft((p) => ({ ...p, collar: e.target.value }))} required />
             <input className="admin-input" placeholder="Price Adjustment (+/-)" type="number" value={variantDraft.priceAdjustment} onChange={(e) => setVariantDraft((p) => ({ ...p, priceAdjustment: e.target.value }))} />
             <input className="admin-input" placeholder="Initial Stock" type="number" min="0" value={variantDraft.quantity} onChange={(e) => setVariantDraft((p) => ({ ...p, quantity: e.target.value }))} />
-            <button type="submit" className="admin-primary-btn">Add SKU Variant</button>
+            <button type="submit" className="admin-primary-btn">+ Add Variant</button>
           </form>
 
           <div className="admin-table-wrap">
@@ -314,7 +314,7 @@ function AdminProductsSection({
                           <td>{inv?.quantity ?? 0}</td>
                           <td>
                             <button type="button" className="admin-link-btn" onClick={() => beginEditVariant(variant)}>Edit</button>
-                            <button type="button" className="admin-link-btn admin-link-btn-danger" onClick={() => handleDeleteVariant(variant._id)}>Delete</button>
+                            <button type="button" className="admin-link-btn admin-link-btn-danger" onClick={() => { if (window.confirm('Delete this variant?')) handleDeleteVariant(variant._id); }}>Delete</button>
                           </td>
                         </>
                       )}
@@ -323,7 +323,7 @@ function AdminProductsSection({
                 })}
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>No variants yet for this line item.</td>
+                    <td colSpan={8}>No variants for this product yet.</td>
                   </tr>
                 ) : null}
               </tbody>

@@ -11,11 +11,11 @@ const inventorySchema = new mongoose.Schema(
     },
     lineName: { type: String, required: true, trim: true },
     quantity: { type: Number, required: true, default: 0, min: 0 },
-    reserved: { type: Number, default: 0, min: 0 }, // số lượng được đặt nhưng chưa thanh toán
+    reserved: { type: Number, default: 0, min: 0 }, // quantity ordered but not yet paid
     available: { type: Number, get: function() { return this.quantity - this.reserved; } }, // virtual field
-    reorderLevel: { type: Number, default: 5 }, // cảnh báo khi dưới mức này
+    reorderLevel: { type: Number, default: 5 }, // warning level when below this
     lastRestockDate: { type: Date },
-    location: { type: String, default: 'Main Warehouse' } // vị trí kho
+    location: { type: String, default: 'Main Warehouse' } // warehouse location
   },
   {
     timestamps: true,
@@ -24,21 +24,21 @@ const inventorySchema = new mongoose.Schema(
   }
 );
 
-// Index để tìm kiếm nhanh
+// Index for fast searching
 inventorySchema.index({ productId: 1 });
 
-// Method để check nếu sắp hết hàng
+// Method to check if low stock
 inventorySchema.methods.isLowStock = function() {
   return this.available < this.reorderLevel;
 };
 
-// Method để update tồn kho khi đơn hàng được tạo
+// Method to update stock when order is created
 inventorySchema.statics.updateReserved = async function(variantId, quantity, increment = true) {
   const operation = increment ? { $inc: { reserved: quantity } } : { $inc: { reserved: -quantity } };
   return await this.findByIdAndUpdate(variantId, operation, { new: true });
 };
 
-// Method để decrease quantity khi đơn hàng được fulfil
+// Method to decrease quantity when order is fulfilled
 inventorySchema.statics.decreaseStock = async function(variantId, quantity) {
   return await this.findByIdAndUpdate(
     variantId,
